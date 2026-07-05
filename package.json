@@ -1,0 +1,25 @@
+{
+  "name": "sistema-papeleria",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema de inventario para papeleria local y multi-tenant.",
+  "workspaces": [
+    "core",
+    "frontend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm:dev -w core\" \"npm:dev -w frontend\"",
+    "build": "npm run build -w shared && npm run build -w core && npm run build -w frontend",
+    "start": "npm run start -w core",
+    "desktop:dev": "npm run dev --prefix desktop"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^10.0.0",
+    "jimp": "^1.6.1",
+    "xlsx": "^0.18.5"
+  }
+}

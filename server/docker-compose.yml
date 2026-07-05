@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./tenants:/app/tenants
+      - ./data:/app/data
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000

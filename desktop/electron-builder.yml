@@ -1,0 +1,14 @@
+appId: com.papeleria.inventario
+productName: Sistema Papeleria
+directories:
+  output: dist
+files:
+  - main.js
+  - ../core/**
+  - ../frontend/dist/**
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

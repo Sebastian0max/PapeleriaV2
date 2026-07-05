@@ -1,0 +1,4 @@
+codigo,nombre,cantidad,precio,categoria,stock_minimo
+101,Lápiz HB,50,0.50,Útiles,10
+102,Cuaderno A4,30,2.50,Papelería,5
+103,Borrador,100,0.20,Útiles,20
