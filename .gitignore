@@ -39,3 +39,6 @@ data/
 frontend/dist/
 core/dist/
 desktop/dist/
+
+.vercel
+.env*

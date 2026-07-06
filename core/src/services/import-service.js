@@ -325,47 +325,69 @@ function detectCsvDelimiter(text) {
 /* ── Construcción de filas desde la matriz ─────────────────────────── */
 
 function rowsFromMatrix(matrix) {
-  // Etiquetar filas con su número (1-based)
-  const tagged = matrix
-    .map((row, index) => ({ row: Array.isArray(row) ? row : [], rowNumber: index + 1 }));
+  // Filtrar filas completamente vacías
+  const usefulRows = matrix
+    .map((row, index) => ({ row: Array.isArray(row) ? row : [], rowNumber: index + 1 }))
+    .filter(({ row }) => row.some((cell) => String(cell ?? "").trim() !== ""));
 
-  if (tagged.length === 0) return [];
+  if (usefulRows.length === 0) return [];
 
-  // 1. Encontrar encabezado: primera fila (desde el inicio) con al menos 2 celdas no vacías
-  let headerRow = null;
-  let headerIndex = -1;
-  for (let i = 0; i < tagged.length; i++) {
-    const nonEmpty = tagged[i].row.filter(cell => String(cell ?? "").trim() !== "");
-    if (nonEmpty.length >= 2) {
-      headerRow = tagged[i];
-      headerIndex = i;
-      break;
+  // Buscar encabezado en las primeras 50 filas: la fila con más columnas reconocidas
+  const scored = usefulRows
+    .slice(0, 50)
+    .map((item) => ({ ...item, score: scoreHeaderRow(item.row) }));
+  const headerCandidate = scored.sort((a, b) => b.score - a.score)[0];
+
+  // Si hay al menos 2 columnas reconocidas, usar mapeo por nombre
+  if (headerCandidate && headerCandidate.score >= 2) {
+    const mapping = buildHeaderMapping(headerCandidate.row);
+    const hasCantidad = mapping.some(f => f === "cantidad");
+    const results = [];
+    for (const { row, rowNumber } of usefulRows) {
+      if (rowNumber <= headerCandidate.rowNumber) continue;
+      const obj = { __rowNumber: rowNumber };
+      row.forEach((value, index) => {
+        const field = mapping[index];
+        if (field && obj[field] == null) obj[field] = value;
+        if (!field && String(value ?? "").trim() !== "") obj[`__extra_${index}`] = value;
+      });
+      if (!hasCantidad && obj.cantidad == null) obj.cantidad = "0";
+      if (hasImportSignal(obj)) results.push(obj);
     }
+    return results;
   }
 
-  if (!headerRow) return [];
-
-  // 2. Construir mapping por nombre
-  const mapping = buildHeaderMapping(headerRow.row);
-  const hasCantidad = mapping.some(f => f === "cantidad");
-
-  // 3. Procesar filas posteriores al encabezado
-  const dataRows = tagged.slice(headerIndex + 1);
+  // Fallback: usar la primera fila con datos como encabezado posicional
+  const headerRow = usefulRows[0].row;
+  const mapping = headerRow.map(() => null); // todas sin mapeo
   const results = [];
-
-  for (const { row, rowNumber } of dataRows) {
-    const obj = { __rowNumber: rowNumber };
-    row.forEach((value, index) => {
-      const field = mapping[index];
-      if (field && obj[field] == null) obj[field] = value;
-      if (!field && String(value ?? "").trim() !== "") obj[`__extra_${index}`] = value;
-    });
-    // Si no existía columna Cantidad en el archivo, asumir 0 para cada fila
-    if (!hasCantidad && obj.cantidad == null) obj.cantidad = "0";
+  for (const { row, rowNumber } of usefulRows) {
+    if (rowNumber <= usefulRows[0].rowNumber) continue;
+    const obj = {
+      __rowNumber: rowNumber,
+      codigo: row[0],
+      nombre: row[1],
+      cantidad: row[2] != null ? row[2] : "0",
+      precio: row[3],
+      categoria: row[4],
+      stock_minimo: row[5]
+    };
+    for (let i = 6; i < row.length; i++) {
+      if (String(row[i] ?? "").trim() !== "") obj[`__extra_${i}`] = row[i];
+    }
     if (hasImportSignal(obj)) results.push(obj);
   }
-
   return results;
+}
+
+function scoreHeaderRow(row) {
+  const recognized = new Set();
+  for (const cell of row) {
+    const field = canonicalField(normalizeHeader(cell));
+    if (field) recognized.add(field);
+  }
+  const hasCore = recognized.has("nombre") && (recognized.has("cantidad") || recognized.has("precio"));
+  return recognized.size + (hasCore ? 3 : 0);
 }
 
 function buildHeaderMapping(row) {
