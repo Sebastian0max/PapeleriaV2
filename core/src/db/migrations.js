@@ -146,6 +146,16 @@ export function runMigrations(db) {
   addColumn(db, "movimientos", "revertida_por", "INTEGER");
   addColumn(db, "movimientos", "motivo_reversion", "TEXT");
 
+  // Add trash columns to productos
+  addColumn(db, "productos", "en_papelera", "INTEGER NOT NULL DEFAULT 0");
+  addColumn(db, "productos", "fecha_eliminacion", "TEXT");
+  addColumn(db, "productos", "eliminado_por", "INTEGER");
+
+  // Add trash columns to movimientos
+  addColumn(db, "movimientos", "en_papelera", "INTEGER NOT NULL DEFAULT 0");
+  addColumn(db, "movimientos", "fecha_eliminacion", "TEXT");
+  addColumn(db, "movimientos", "eliminado_por", "INTEGER");
+
   const count = db.prepare("SELECT COUNT(*) AS total FROM usuarios").get().total;
   if (count === 0) {
     db.prepare("INSERT INTO usuarios (usuario, password_hash, rol) VALUES (?, ?, ?)")

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createProduct, deleteProduct, listProducts, updateProduct, updateProductImage, updateStock } from "../services/products-service.js";
+import { createProduct, deleteProduct, listProducts, listTrashProducts, restoreProduct, purgeOldTrash, updateProduct, updateProductImage, updateStock } from "../services/products-service.js";
 
 const productSchema = z.object({
   nombre: z.string().min(1),
@@ -39,13 +39,20 @@ export async function productRoutes(app) {
     console.log(`[API] DELETE /productos/${request.params.id} by user ${request.user.id}`);
     const result = deleteProduct(Number(request.params.id), request.user.id);
     console.log(`[API] DELETE result for ${request.params.id}:`, result);
-    if (result.deactivated) {
-      return {
-        ...result,
-        message: "Este producto no se puede eliminar porque tiene transacciones registradas. Se desactivo en su lugar."
-      };
-    }
-    return { ...result, message: "Producto eliminado correctamente." };
+    return { ...result, message: "Producto movido a la papelera." };
+  });
+
+  // Trash endpoints (admin only)
+  app.get("/papelera", { preHandler: [app.requireAdminPermission("productos", "ver")] }, async () => {
+    return { products: listTrashProducts() };
+  });
+
+  app.post("/:id/restaurar", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
+    return restoreProduct(Number(request.params.id), request.user.id);
+  });
+
+  app.post("/purgar", { preHandler: [app.requireAdminPermission("productos", "eliminar")] }, async (request) => {
+    return purgeOldTrash(7);
   });
 
   app.post("/:id/imagen", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {

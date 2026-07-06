@@ -12,7 +12,7 @@ export function listProducts({ search = "" } = {}) {
     .prepare(`
       SELECT id, nombre, sku, codigo_barras, categoria, cantidad_stock, stock_minimo, precio, activo, imagen_url, thumbnail_url
       FROM productos
-      WHERE activo = 1 AND (? = '%%' OR nombre LIKE ? OR sku LIKE ? OR codigo_barras LIKE ? OR categoria LIKE ?)
+      WHERE activo = 1 AND en_papelera = 0 AND (? = '%%' OR nombre LIKE ? OR sku LIKE ? OR codigo_barras LIKE ? OR categoria LIKE ?)
       ORDER BY COALESCE(categoria, 'General') ASC, nombre ASC
     `)
     .all(term, term, term, term, term);
@@ -79,41 +79,86 @@ export function deleteProduct(id, usuarioId) {
     throw error;
   }
 
-  const hasHistory = db.prepare(`
-    SELECT
-      (SELECT COUNT(*) FROM ventas WHERE producto_id = ?) +
-      (SELECT COUNT(*) FROM movimientos WHERE producto_id = ?) +
-      (SELECT COUNT(*) FROM bitacora_importaciones WHERE producto_id = ?) AS total
-  `).get(id, id, id).total > 0;
-
-  if (hasHistory) {
-    db.prepare("UPDATE productos SET activo = 0, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?").run(id);
-    if (usuarioId) {
-      logAudit({
-        usuarioId,
-        entidad: "producto",
-        entidadId: id,
-        accion: "desactivar",
-        campo: "activo",
-        valorAnterior: 1,
-        valorNuevo: 0,
-        detalle: "Baja logica por historial existente"
-      });
-    }
-    return { deleted: false, deactivated: true };
+  if (product.en_papelera) {
+    const error = new Error("Este producto ya esta en la papelera");
+    error.statusCode = 400;
+    throw error;
   }
 
-  db.prepare("DELETE FROM productos WHERE id = ?").run(id);
+  // Move to trash instead of deleting
+  db.prepare(`
+    UPDATE productos SET en_papelera = 1, fecha_eliminacion = CURRENT_TIMESTAMP, eliminado_por = ?, actualizado_en = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(usuarioId || null, id);
+
   if (usuarioId) {
     logAudit({
       usuarioId,
       entidad: "producto",
       entidadId: id,
-      accion: "eliminar",
-      detalle: "Eliminacion fisica (sin historial)"
+      accion: "papelera",
+      detalle: "Movido a papelera"
     });
   }
-  return { deleted: true, deactivated: false };
+
+  return { deleted: false, trash: true, message: "Producto movido a la papelera." };
+}
+
+export function listTrashProducts() {
+  return getDb().prepare(`
+    SELECT p.*, u.usuario AS eliminado_por_usuario
+    FROM productos p
+    LEFT JOIN usuarios u ON u.id = p.eliminado_por
+    WHERE p.en_papelera = 1
+    ORDER BY p.fecha_eliminacion DESC
+  `).all();
+}
+
+export function restoreProduct(id, usuarioId) {
+  const db = getDb();
+  const product = db.prepare("SELECT * FROM productos WHERE id = ? AND en_papelera = 1").get(id);
+  if (!product) {
+    const error = new Error("Producto no encontrado en la papelera");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  db.prepare(`
+    UPDATE productos SET en_papelera = 0, fecha_eliminacion = NULL, eliminado_por = NULL, actualizado_en = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(id);
+
+  if (usuarioId) {
+    logAudit({
+      usuarioId,
+      entidad: "producto",
+      entidadId: id,
+      accion: "restaurar",
+      detalle: "Restaurado desde la papelera"
+    });
+  }
+
+  return { restored: true, product: db.prepare("SELECT * FROM productos WHERE id = ?").get(id) };
+}
+
+export function purgeOldTrash(days = 7) {
+  const db = getDb();
+  const old = db.prepare(`
+    SELECT id, nombre FROM productos
+    WHERE en_papelera = 1 AND fecha_eliminacion IS NOT NULL
+    AND julianday('now') - julianday(fecha_eliminacion) >= ?
+  `).all(days);
+
+  const count = old.length;
+  if (count > 0) {
+    const ids = old.map(p => p.id);
+    db.prepare(`DELETE FROM movimientos WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+    db.prepare(`DELETE FROM ventas WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+    db.prepare(`DELETE FROM bitacora_importaciones WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+    db.prepare(`DELETE FROM productos WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+    console.log(`[purge] Eliminados fisicamente ${count} productos de la papelera con mas de ${days} dias.`);
+  }
+  return { purged: count };
 }
 
 export async function updateProductImage(id, file) {

@@ -11,7 +11,9 @@ import {
   ShoppingCart,
   Trash2,
   Upload,
-  Users
+  Users,
+  RotateCcw,
+  Clock
 } from "lucide-react";
 import "./styles.css";
 
@@ -560,16 +562,22 @@ function Report({ report }) {
   return (
     <div className="report">
       <h3>Top del Dia</h3>
-      {report.ventasDia.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      {report.ventasDia.top.length === 0 ? <p className="muted">Sin ventas hoy</p> : report.ventasDia.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
       <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos dia:</span><strong>${report.ventasDia.ingresos}</strong></div>
 
+      <h3 style={{ marginTop: "16px" }}>Productos vendidos hoy</h3>
+      {report.ventasDiaDetalle.length === 0 ? <p className="muted">Sin ventas hoy</p> : report.ventasDiaDetalle.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+
       <h3 style={{ marginTop: "16px" }}>Top de la Semana</h3>
-      {report.ventasSemana.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      {report.ventasSemana.top.length === 0 ? <p className="muted">Sin ventas esta semana</p> : report.ventasSemana.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
       <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos semana:</span><strong>${report.ventasSemana.ingresos}</strong></div>
 
       <h3 style={{ marginTop: "16px" }}>Top del Mes</h3>
-      {report.ventasMes.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      {report.ventasMes.top.length === 0 ? <p className="muted">Sin ventas este mes</p> : report.ventasMes.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
       <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${report.ventasMes.ingresos}</strong></div>
+
+      <h3 style={{ marginTop: "16px" }}>Productos que menos se venden</h3>
+      {report.menosVendidos.length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidos.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
       <h3 style={{ marginTop: "16px" }}>Productos con bajo stock</h3>
       {(report.agotados || []).map((p) => <div className="report-line" key={p.id}><span className="error">{p.nombre} (Agotado)</span><strong>{p.cantidad_stock} uds</strong></div>)}
@@ -598,11 +606,13 @@ function Config({ token, can, onImported }) {
         {can("usuarios:ver") && <button className={section === "usuarios" ? "active" : ""} onClick={() => setSection("usuarios")}><Users size={17} />Usuarios</button>}
         {can("roles:ver") && <button className={section === "roles" ? "active" : ""} onClick={() => setSection("roles")}><Settings size={17} />Roles</button>}
         {can("importacion:ver") && <button className={section === "bitacora" ? "active" : ""} onClick={() => setSection("bitacora")}><Boxes size={17} />Bitacora</button>}
+        {can("productos:eliminar") && <button className={section === "papelera" ? "active" : ""} onClick={() => setSection("papelera")}><Trash2 size={17} />Papelera</button>}
       </aside>
       {section === "importacion" && <ImportPanel token={token} onImported={onImported} />}
       {section === "usuarios" && <UsersPanel token={token} />}
       {section === "roles" && <RolesPanel token={token} />}
       {section === "bitacora" && <ImportLogPanel token={token} />}
+      {section === "papelera" && <TrashPanel token={token} />}
     </section>
   );
 }
@@ -939,6 +949,84 @@ function TransactionsList({ token, user, onRevert, canRevert }) {
           <button className="link-button" onClick={() => load(true)} style={{ width: "100%", padding: "12px", background: "#f1f5f9" }}>Cargar más transacciones</button>
         )}
       </div>
+    </div>
+  );
+}
+
+function TrashPanel({ token }) {
+  const [products, setProducts] = useState([]);
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    try {
+      const data = await api(token, "/productos/papelera");
+      setProducts(data.products || []);
+    } catch (err) {
+      setMessage("Error al cargar papelera: " + err.message);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function restore(id) {
+    try {
+      await api(token, `/productos/${id}/restaurar`, { method: "POST" });
+      setMessage("Producto restaurado correctamente.");
+      load();
+    } catch (err) {
+      setMessage("Error al restaurar: " + err.message);
+    }
+  }
+
+  async function purgeAll() {
+    if (!confirm("¿Eliminar fisicamente todos los productos en la papelera con mas de 7 dias?")) return;
+    try {
+      const result = await api(token, "/productos/purgar", { method: "POST" });
+      setMessage(`Papelera purgada: ${result.purged} productos eliminados.`);
+      load();
+    } catch (err) {
+      setMessage("Error al purgar: " + err.message);
+    }
+  }
+
+  function daysRemaining(fecha) {
+    if (!fecha) return "-";
+    const eliminado = new Date(fecha);
+    const now = new Date();
+    const diff = 7 - Math.floor((now - eliminado) / (1000 * 60 * 60 * 24));
+    return diff > 0 ? `${diff} dia(s)` : "Vence hoy";
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <h2>Papelera</h2>
+        <button className="danger" onClick={purgeAll}><Trash2 size={16} />Purgar antiguos</button>
+      </div>
+      {message && <p className="success">{message}</p>}
+      {products.length === 0 ? (
+        <p className="muted">La papelera esta vacia.</p>
+      ) : (
+        <div className="table">
+          {products.map((p) => (
+            <div className="row" key={p.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px auto", padding: "10px" }}>
+              <div>
+                <strong>{p.nombre}</strong>
+                <span style={{ fontSize: "0.85rem", color: "#64748b", display: "block" }}>
+                  Eliminado por: {p.eliminado_por_usuario || "Desconocido"} - {p.fecha_eliminacion ? new Date(p.fecha_eliminacion).toLocaleString("es-ES") : ""}
+                </span>
+              </div>
+              <span className="stock-col">{p.cantidad_stock} uds</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.8rem", color: "#92400e" }}>
+                <Clock size={14} />{daysRemaining(p.fecha_eliminacion)}
+              </span>
+              <div className="actions">
+                <button onClick={() => restore(p.id)} title="Restaurar"><RotateCcw size={16} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,11 @@ const DB_OBJECT = "papeleria.db";
 
 let syncEnabled = false;
 let uploadTimer = null;
+let uploading = false;
+let pendingUpload = false;
+let periodicTimer = null;
+
+const PERIODIC_INTERVAL = 15_000; // every 15 seconds
 
 function supabaseHeaders() {
   return {
@@ -75,7 +80,12 @@ export async function downloadDb() {
 async function uploadDb() {
   if (!syncEnabled) return;
   if (!fs.existsSync(config.dbPath)) return;
+  if (uploading) {
+    pendingUpload = true;
+    return;
+  }
 
+  uploading = true;
   try {
     const bytes = fs.readFileSync(config.dbPath);
     const res = await fetch(storageUrl(DB_OBJECT), {
@@ -95,17 +105,47 @@ async function uploadDb() {
     }
   } catch (err) {
     console.error("[cloud-backup] DB upload error:", err.message);
+  } finally {
+    uploading = false;
+    if (pendingUpload) {
+      pendingUpload = false;
+      uploadDb();
+    }
   }
 }
 
-/** Schedule a debounced DB upload (waits 5 seconds after last change) */
+/** Upload immediately (no debounce) */
 export function scheduleDbUpload() {
   if (!syncEnabled) return;
-  if (uploadTimer) clearTimeout(uploadTimer);
-  uploadTimer = setTimeout(() => {
-    uploadTimer = null;
-    uploadDb();
-  }, 5000);
+  uploadDb();
+}
+
+/** Start periodic backup every N seconds */
+export function startPeriodicBackup() {
+  if (!syncEnabled) return;
+  if (periodicTimer) clearInterval(periodicTimer);
+  periodicTimer = setInterval(uploadDb, PERIODIC_INTERVAL);
+  console.log(`[cloud-backup] Periodic backup every ${PERIODIC_INTERVAL / 1000}s started.`);
+}
+
+/** Flush pending upload on shutdown */
+export async function flushOnShutdown() {
+  if (!syncEnabled) return;
+  if (periodicTimer) clearInterval(periodicTimer);
+  if (uploading) {
+    // Wait for current upload, then any pending will fire
+    await new Promise(resolve => {
+      const check = () => {
+        if (!uploading && !pendingUpload) resolve();
+        else setTimeout(check, 100);
+      };
+      check();
+    });
+  }
+  if (!uploading && fs.existsSync(config.dbPath)) {
+    await uploadDb();
+  }
+  console.log("[cloud-backup] Shutdown flush complete.");
 }
 
 /**
