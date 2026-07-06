@@ -15,8 +15,9 @@ const HEADER_ALIASES = {
   nombre: [
     "nombre", "producto", "productos", "descripcion", "descripcion_producto",
     "item", "articulo", "articulo_producto", "name", "product", "description",
-    "product_name", "nombre_producto", "desc", "detalle", "material",
-    "nombre_articulo", "titulo", "nombre_del_producto", "nom_producto"
+    "product_name", "nombre_producto", "desc", "detalle", "detalles",
+    "detalle_producto", "material", "nombre_articulo", "titulo",
+    "nombre_del_producto", "nom_producto"
   ],
   cantidad: [
     "cantidad", "cant", "stock", "existencia", "existencias", "inventario",
