@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: papeleria-backend
+    env: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./core/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+      - key: SUPABASE_SERVICE_KEY
+      - key: JWT_SECRET
