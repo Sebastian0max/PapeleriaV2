@@ -200,6 +200,7 @@ function Dashboard({ session, onLogout }) {
   const [saleToDelete, setSaleToDelete] = useState(null);
   const [productToDelete, setProductToDelete] = useState(null);
   const [revertTarget, setRevertTarget] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   async function confirmDeleteSale() {
     if (!saleToDelete) return;
@@ -223,6 +224,7 @@ function Dashboard({ session, onLogout }) {
       setMessage(result.message || "Transaccion revertida correctamente");
       setTimeout(() => setMessage(""), 5000);
       setRevertTarget(null);
+      setReloadKey(k => k + 1);
       load();
       return true;
     } catch (err) {
@@ -320,7 +322,7 @@ function Dashboard({ session, onLogout }) {
           <div className="panel">
             <h2>Vender</h2>
             {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
-            <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} />
+            <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
             <h2>Reportes</h2>
@@ -828,7 +830,7 @@ function ImportLogPanel({ token }) {
   );
 }
 
-function TransactionsList({ token, user, onRevert, canRevert }) {
+function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
   const [transactions, setTransactions] = useState([]);
   const [filters, setFilters] = useState({ fechaDesde: "", fechaHasta: "", producto: "" });
   const [tipoFilter, setTipoFilter] = useState("");
@@ -837,7 +839,14 @@ function TransactionsList({ token, user, onRevert, canRevert }) {
 
   async function load(isAppend = false) {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
-    if (tipoFilter) query.set("tipo", tipoFilter);
+    if (tipoFilter === "revertida") {
+      query.set("revertida", "1");
+    } else if (tipoFilter) {
+      query.set("tipo", tipoFilter);
+      query.set("revertida", "0");
+    } else {
+      query.set("revertida", "0");
+    }
     query.set("limit", 50);
     query.set("offset", isAppend ? page * 50 : 0);
 
@@ -856,7 +865,7 @@ function TransactionsList({ token, user, onRevert, canRevert }) {
     }
   }
 
-  useEffect(() => { load(); }, [tipoFilter]);
+  useEffect(() => { load(); }, [tipoFilter, reloadKey]);
 
   // Agrupacion Año -> Mes -> Día
   const grouped = useMemo(() => {
@@ -874,6 +883,18 @@ function TransactionsList({ token, user, onRevert, canRevert }) {
 
       map[year][month][dateKey].push(t);
     }
+    // Sort: non-reverted first within each day group
+    for (const year of Object.keys(map)) {
+      for (const month of Object.keys(map[year])) {
+        for (const dateKey of Object.keys(map[year][month])) {
+          map[year][month][dateKey].sort((a, b) => {
+            if (a.revertida && !b.revertida) return 1;
+            if (!a.revertida && b.revertida) return -1;
+            return 0;
+          });
+        }
+      }
+    }
     return map;
   }, [transactions]);
 
@@ -882,7 +903,8 @@ function TransactionsList({ token, user, onRevert, canRevert }) {
     { value: "venta", label: "Ventas", color: "#1e3a8a" },
     { value: "entrada", label: "Entradas", color: "#166534" },
     { value: "salida", label: "Salidas", color: "#991b1b" },
-    { value: "ajuste", label: "Ajustes", color: "#92400e" }
+    { value: "ajuste", label: "Ajustes", color: "#92400e" },
+    { value: "revertida", label: "Revertidas", color: "#64748b" }
   ];
 
   return (

@@ -1,7 +1,7 @@
 import { getDb } from "../db/connection.js";
 import { logAudit } from "./audit-service.js";
 
-export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHasta, producto, tipo }) {
+export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHasta, producto, tipo, revertida }) {
   const db = getDb();
   const filters = [];
   const params = [];
@@ -22,6 +22,11 @@ export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHast
     filters.push("m.tipo = ?");
     params.push(tipo);
   }
+  if (revertida === "1") {
+    filters.push("m.revertida = 1");
+  } else if (revertida === "0") {
+    filters.push("m.revertida = 0");
+  }
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
 
@@ -34,7 +39,7 @@ export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHast
     JOIN productos p ON m.producto_id = p.id
     JOIN usuarios u ON m.usuario_id = u.id
     ${where}
-    ORDER BY m.fecha DESC
+    ORDER BY m.revertida ASC, m.fecha DESC
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
 

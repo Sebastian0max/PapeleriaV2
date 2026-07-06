@@ -8,7 +8,8 @@ const querySchema = z.object({
   fechaDesde: z.string().optional(),
   fechaHasta: z.string().optional(),
   producto: z.string().optional(),
-  tipo: z.enum(["entrada", "salida", "venta", "ajuste"]).optional()
+  tipo: z.enum(["entrada", "salida", "venta", "ajuste"]).optional(),
+  revertida: z.enum(["0", "1"]).optional()
 });
 
 const revertSchema = z.object({
