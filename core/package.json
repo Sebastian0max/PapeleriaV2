@@ -2,6 +2,9 @@
   "name": "@papeleria/core",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "type": "module",
   "main": "src/index.js",
   "scripts": {

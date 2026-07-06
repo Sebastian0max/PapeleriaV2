@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { Jimp } from "jimp";
 import path from "node:path";
 import { logAudit, logProductChanges } from "./audit-service.js";
+import { uploadImage, isCloudEnabled } from "./cloud-backup.js";
 
 export function listProducts({ search = "" } = {}) {
   const term = `%${search}%`;
@@ -141,30 +142,56 @@ export async function updateProductImage(id, file) {
   }
 
   const ext = allowed.get(file.mimetype);
-  const dir = path.join(config.uploadsDir, "productos");
-  fs.mkdirSync(dir, { recursive: true });
-  const name = `${id}-${Date.now()}${ext}`;
-  const thumbName = `${id}-${Date.now()}-thumb.jpg`;
-  const fullPath = path.join(dir, name);
-  const thumbPath = path.join(dir, thumbName);
   const bytes = await file.toBuffer();
   if (bytes.length > 2 * 1024 * 1024) {
     const error = new Error("La imagen no puede superar 2MB");
     error.statusCode = 413;
     throw error;
   }
-  fs.writeFileSync(fullPath, bytes);
-  try {
-    await createThumbnail(bytes, thumbPath);
-  } catch {
-    fs.rmSync(fullPath, { force: true });
-    const error = new Error("La imagen no se pudo procesar");
-    error.statusCode = 400;
-    throw error;
+
+  const name = `${id}-${Date.now()}${ext}`;
+  const thumbName = `${id}-${Date.now()}-thumb.jpg`;
+  let url, thumbUrl;
+
+  if (isCloudEnabled()) {
+    // Upload to Supabase Storage
+    const cloudUrl = await uploadImage(name, bytes, file.mimetype);
+    if (!cloudUrl) {
+      const error = new Error("No se pudo subir la imagen a la nube");
+      error.statusCode = 500;
+      throw error;
+    }
+    url = cloudUrl;
+
+    // Create and upload thumbnail
+    try {
+      const image = await Jimp.read(bytes);
+      image.cover({ w: 160, h: 160 });
+      const thumbBuffer = await image.getBuffer("image/jpeg");
+      const cloudThumbUrl = await uploadImage(thumbName, thumbBuffer, "image/jpeg");
+      thumbUrl = cloudThumbUrl || cloudUrl;
+    } catch {
+      thumbUrl = cloudUrl;
+    }
+  } else {
+    // Local storage (development)
+    const dir = path.join(config.uploadsDir, "productos");
+    fs.mkdirSync(dir, { recursive: true });
+    const fullPath = path.join(dir, name);
+    const thumbPath = path.join(dir, thumbName);
+    fs.writeFileSync(fullPath, bytes);
+    try {
+      await createThumbnail(bytes, thumbPath);
+    } catch {
+      fs.rmSync(fullPath, { force: true });
+      const error = new Error("La imagen no se pudo procesar");
+      error.statusCode = 400;
+      throw error;
+    }
+    url = `/uploads/productos/${name}`;
+    thumbUrl = `/uploads/productos/${thumbName}`;
   }
 
-  const url = `/uploads/productos/${name}`;
-  const thumbUrl = `/uploads/productos/${thumbName}`;
   getDb().prepare(`
     UPDATE productos SET imagen_url = ?, thumbnail_url = ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?
   `).run(url, thumbUrl, id);

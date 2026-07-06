@@ -376,7 +376,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
   return (
     <div className="row product-row">
       <div className="product-title">
-        {product.thumbnail_url ? <img src={`${API_URL}${product.thumbnail_url}`} alt="" /> : <span className="thumb" />}
+        {product.thumbnail_url ? <img src={product.thumbnail_url.startsWith("http") ? product.thumbnail_url : `${API_URL}${product.thumbnail_url}`} alt="" /> : <span className="thumb" />}
         <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
       </div>
       <span className="stock-col">{product.cantidad_stock} uds</span>
