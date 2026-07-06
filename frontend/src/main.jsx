@@ -49,10 +49,13 @@ class ErrorBoundary extends React.Component {
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:4000";
 const ACTIONS = ["ver", "crear", "editar", "eliminar"];
 
+function normalizePath(p) { return '/' + p.replace(/^\/+/, '').replace(/\/+$/, ''); }
 function api(token, path, options = {}) {
   const isForm = options.body instanceof FormData;
   const hasJsonBody = options.body && !isForm;
-  return fetch(`${API_URL.replace(/\\/*$/, '')}${path}`, {
+  const base = API_URL.replace(/\/+$/, '');
+  const cleanPath = normalizePath(path);
+  return fetch(`${base}${cleanPath}`, {
     ...options,
     headers: {
       ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
@@ -154,19 +157,19 @@ function Dashboard({ session, onLogout }) {
   }
 
   async function confirmDeleteProduct() {
-     if (!productToDelete) return;
-     try {
-       console.log(`[Frontend] Confirmando eliminación de producto ${productToDelete.id}`);
-       const result = await api(token, `/productos/${productToDelete.id}`, { method: "DELETE" });
-       console.log(`[Frontend] Respuesta de eliminación producto:`, result);
-       setMessage(result.message || "Producto eliminado");
-       setTimeout(() => setMessage(""), 5000);
-       await load();
-     } catch (err) {
-       console.error("[Frontend] Error al eliminar producto:", err);
-       alert("Error al eliminar: " + err.message);
-     }
-     setProductToDelete(null);
+    if (!productToDelete) return;
+    try {
+      console.log(`[Frontend] Confirmando eliminación de producto ${productToDelete.id}`);
+      const result = await api(token, `/productos/${productToDelete.id}`, { method: "DELETE" });
+      console.log(`[Frontend] Respuesta de eliminación producto:`, result);
+      setMessage(result.message || "Producto eliminado");
+      setTimeout(() => setMessage(""), 5000);
+      await load();
+    } catch (err) {
+      console.error("[Frontend] Error al eliminar producto:", err);
+      alert("Error al eliminar: " + err.message);
+    }
+    setProductToDelete(null);
   }
 
   async function load(searchOverride = search) {
@@ -256,14 +259,14 @@ function Dashboard({ session, onLogout }) {
         await load("");
         setView("inventario");
       }} />}
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={!!saleToDelete}
         title="Eliminar Venta"
         content={saleToDelete ? `Producto: ${saleToDelete.producto_nombre}\nCantidad: ${saleToDelete.cantidad}\nTotal: $${saleToDelete.total}\nFecha: ${saleToDelete.fecha}\n\n¿Estas seguro de anular esta venta? El stock será devuelto al inventario.` : ""}
         onConfirm={confirmDeleteSale}
         onCancel={() => setSaleToDelete(null)}
       />
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={!!productToDelete}
         title="Eliminar Producto"
         content={productToDelete ? `Producto: ${productToDelete.nombre}\nCantidad en stock: ${productToDelete.cantidad_stock}\n\n¿Estás seguro de eliminar este producto?` : ""}
@@ -376,7 +379,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
   return (
     <div className="row product-row">
       <div className="product-title">
-        {product.thumbnail_url ? <img src={product.thumbnail_url.startsWith("http") ? product.thumbnail_url : `${API_URL.replace(/\\/*$/, '')}${product.thumbnail_url}`} alt="" /> : <span className="thumb" />}
+        {product.thumbnail_url ? <img src={product.thumbnail_url.startsWith("http") ? product.thumbnail_url : `${API_URL.replace(/[\/\\]+$/, '')}${normalizePath(product.thumbnail_url)}`} alt="" /> : <span className="thumb" />}
         <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
       </div>
       <span className="stock-col">{product.cantidad_stock} uds</span>
@@ -508,7 +511,7 @@ function ImportPanel({ token, onImported }) {
       ? `${noQtyWarning}Hay productos cuyo stock bajará frente al valor actual. Confirmas disminuir esos valores?`
       : `${noQtyWarning}Confirmas importar este archivo y aplicar los datos?`;
     if (!confirm(text)) return;
-    
+
     setBusy(true);
     try {
       const data = await api(token, "/importaciones/confirmar", { method: "POST", body: JSON.stringify({ token: preview.token }) });
@@ -687,7 +690,7 @@ function TransactionsList({ token }) {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
     query.set("limit", 50);
     query.set("offset", isAppend ? page * 50 : 0);
-    
+
     try {
       const data = await api(token, `/transacciones?${query.toString()}`);
       if (isAppend) {
@@ -718,7 +721,7 @@ function TransactionsList({ token }) {
       if (!map[year]) map[year] = {};
       if (!map[year][month]) map[year][month] = {};
       if (!map[year][month][dateKey]) map[year][month][dateKey] = [];
-      
+
       map[year][month][dateKey].push(t);
     }
     return map;
@@ -734,7 +737,7 @@ function TransactionsList({ token }) {
       </div>
 
       <div className="timeline">
-        {Object.keys(grouped).sort((a,b) => b-a).map(year => (
+        {Object.keys(grouped).sort((a, b) => b - a).map(year => (
           <div key={year} className="tl-year">
             <h3 style={{ fontSize: "1.2rem", margin: "16px 0 8px", color: "#0f172a" }}>{year}</h3>
             {Object.keys(grouped[year]).map(month => (
