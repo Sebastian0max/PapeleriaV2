@@ -325,39 +325,47 @@ function detectCsvDelimiter(text) {
 /* ── Construcción de filas desde la matriz ─────────────────────────── */
 
 function rowsFromMatrix(matrix) {
-  const usefulRows = matrix
-    .map((row, index) => ({ row: Array.isArray(row) ? row : [], rowNumber: index + 1 }))
-    .filter(({ row }) => row.some((cell) => String(cell ?? "").trim() !== ""));
+  // Etiquetar filas con su número (1-based)
+  const tagged = matrix
+    .map((row, index) => ({ row: Array.isArray(row) ? row : [], rowNumber: index + 1 }));
 
-  if (usefulRows.length === 0) return [];
+  if (tagged.length === 0) return [];
 
-  // Buscar el encabezado en las primeras 50 filas (ampliado de 25)
-  const headerCandidate = usefulRows
-    .slice(0, 50)
-    .map((item) => ({ ...item, score: scoreHeaderRow(item.row) }))
-    .sort((a, b) => b.score - a.score)[0];
-
-  if (headerCandidate && headerCandidate.score >= 2) {
-    const mapping = buildHeaderMapping(headerCandidate.row);
-    return usefulRows
-      .filter((item) => item.rowNumber > headerCandidate.rowNumber)
-      .map((item) => rowObjectFromMapping(item.row, mapping, item.rowNumber))
-      .filter(hasImportSignal);
+  // 1. Encontrar encabezado: primera fila (desde el inicio) con al menos 2 celdas no vacías
+  let headerRow = null;
+  let headerIndex = -1;
+  for (let i = 0; i < tagged.length; i++) {
+    const nonEmpty = tagged[i].row.filter(cell => String(cell ?? "").trim() !== "");
+    if (nonEmpty.length >= 2) {
+      headerRow = tagged[i];
+      headerIndex = i;
+      break;
+    }
   }
 
-  return usefulRows
-    .map((item) => rowObjectFromPosition(item.row, item.rowNumber))
-    .filter(hasImportSignal);
-}
+  if (!headerRow) return [];
 
-function scoreHeaderRow(row) {
-  const recognized = new Set();
-  for (const cell of row) {
-    const field = canonicalField(normalizeHeader(cell));
-    if (field) recognized.add(field);
+  // 2. Construir mapping por nombre
+  const mapping = buildHeaderMapping(headerRow.row);
+  const hasCantidad = mapping.some(f => f === "cantidad");
+
+  // 3. Procesar filas posteriores al encabezado
+  const dataRows = tagged.slice(headerIndex + 1);
+  const results = [];
+
+  for (const { row, rowNumber } of dataRows) {
+    const obj = { __rowNumber: rowNumber };
+    row.forEach((value, index) => {
+      const field = mapping[index];
+      if (field && obj[field] == null) obj[field] = value;
+      if (!field && String(value ?? "").trim() !== "") obj[`__extra_${index}`] = value;
+    });
+    // Si no existía columna Cantidad en el archivo, asumir 0 para cada fila
+    if (!hasCantidad && obj.cantidad == null) obj.cantidad = "0";
+    if (hasImportSignal(obj)) results.push(obj);
   }
-  const hasCore = recognized.has("nombre") && (recognized.has("cantidad") || recognized.has("precio"));
-  return recognized.size + (hasCore ? 3 : 0);
+
+  return results;
 }
 
 function buildHeaderMapping(row) {
@@ -369,32 +377,6 @@ function canonicalField(header) {
     if (aliases.includes(header)) return field;
   }
   return null;
-}
-
-function rowObjectFromMapping(row, mapping, rowNumber) {
-  const object = { __rowNumber: rowNumber };
-  row.forEach((value, index) => {
-    const field = mapping[index];
-    if (field && object[field] == null) object[field] = value;
-    if (!field && String(value ?? "").trim() !== "") object[`__extra_${index}`] = value;
-  });
-  return object;
-}
-
-function rowObjectFromPosition(row, rowNumber) {
-  const object = {
-    __rowNumber: rowNumber,
-    codigo: row[0],
-    nombre: row[1],
-    cantidad: row[2],
-    precio: row[3],
-    categoria: row[4],
-    stock_minimo: row[5]
-  };
-  for (let index = 6; index < row.length; index += 1) {
-    if (String(row[index] ?? "").trim() !== "") object[`__extra_${index}`] = row[index];
-  }
-  return object;
 }
 
 function hasImportSignal(row) {
@@ -415,7 +397,11 @@ function normalizeImportRow(row) {
     const entries = Object.entries(row).map(([key, value]) => [normalizeHeader(key), value]);
     for (const key of keys) {
       const found = entries.find(([header]) => header === key);
-      if (found) return { present: true, value: found[1] };
+      if (found && String(found[1] ?? "").trim() !== "") return { present: true, value: found[1] };
+    }
+    for (const key of keys) {
+      const found = entries.find(([header]) => header === key);
+      if (found) return { present: true, value: "" };
     }
     return { present: false, value: "" };
   };
@@ -447,9 +433,9 @@ function normalizeImportRow(row) {
     sku: codigo || null,
     nombre,
     nombre_normalizado: normalizeProductName(nombre),
-    cantidad_stock: cantidadObj.present ? (Number.isFinite(cantidad) ? Math.round(cantidad) : NaN) : undefined,
-    stock_minimo: stockMinimoObj.present ? (Number.isFinite(stockMinimo) && stockMinimo >= 0 ? Math.round(stockMinimo) : 0) : undefined,
-    precio: precioObj.present ? (Number.isFinite(precio) ? Math.round(precio) : NaN) : undefined,
+    cantidad_stock: Number.isFinite(cantidad) ? Math.round(cantidad) : undefined,
+    stock_minimo: Number.isFinite(stockMinimo) && stockMinimo >= 0 ? Math.round(stockMinimo) : undefined,
+    precio: Number.isFinite(precio) ? Math.round(precio) : undefined,
     categoria: categoriaObj.present ? String(categoriaObj.value).trim() || null : undefined
   };
 }
@@ -555,25 +541,37 @@ function normalizeHeader(value) {
  */
 function parseNumber(value) {
   if (typeof value === "number") return value;
-  let text = String(value ?? "")
-    .trim()
-    .replace(/\s/g, "")
-    .replace(/[^0-9,.\-]/g, "");
+  let text = String(value ?? "").trim();
   if (!text) return Number.NaN;
 
-  const lastComma = text.lastIndexOf(",");
-  const lastDot = text.lastIndexOf(".");
+  // Quitar símbolos de moneda, etiquetas, espacios
+  text = text
+    .replace(/\s+/g, "")
+    .replace(/^(cop|usd|eur|mxn|col|pesos|\$|€|£)/i, "")
+    .replace(/\s+/g, "");
+  // Ahora solo deben quedar dígitos, comas, puntos y opcional guion
+  const cleaned = text.replace(/[^0-9,.\-]/g, "");
+  if (!cleaned) return Number.NaN;
+
+  const lastComma = cleaned.lastIndexOf(",");
+  const lastDot = cleaned.lastIndexOf(".");
   if (lastComma >= 0 && lastDot >= 0) {
+    // Ambos separadores: el último es el decimal
     const decimal = lastComma > lastDot ? "," : ".";
     const thousands = decimal === "," ? "." : ",";
-    text = text.split(thousands).join("").replace(decimal, ".");
+    text = cleaned.split(thousands).join("").replace(decimal, ".");
   } else if (lastComma >= 0) {
-    const decimals = text.length - lastComma - 1;
-    text = decimals === 3 ? text.replace(/,/g, "") : text.replace(",", ".");
+    // Solo coma: si tiene exactamente 3 decimales -> separador de miles
+    const decimals = cleaned.length - lastComma - 1;
+    text = decimals === 3 ? cleaned.replace(/,/g, "") : cleaned.replace(",", ".");
   } else if (lastDot >= 0) {
-    const decimals = text.length - lastDot - 1;
-    text = decimals === 3 ? text.replace(/\./g, "") : text;
+    // Solo punto: si tiene exactamente 3 decimales -> separador de miles
+    const decimals = cleaned.length - lastDot - 1;
+    text = decimals === 3 ? cleaned.replace(/\./g, "") : cleaned;
+  } else {
+    text = cleaned;
   }
 
-  return Number(text);
+  const result = Number(text);
+  return Number.isFinite(result) ? result : Number.NaN;
 }
