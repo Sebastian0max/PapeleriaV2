@@ -2,6 +2,15 @@ import bcrypt from "bcryptjs";
 import { getDb } from "../db/connection.js";
 import { listUserPermissions } from "./permissions-service.js";
 
+export function findUserById(id) {
+  return getDb().prepare(`
+    SELECT u.*, COALESCE(r.nombre, u.rol) AS rol_nombre
+    FROM usuarios u
+    LEFT JOIN roles r ON r.id = u.rol_id
+    WHERE u.id = ? AND u.activo = 1
+  `).get(id);
+}
+
 export function findUserByUsername(usuario) {
   return getDb().prepare(`
     SELECT u.*, COALESCE(r.nombre, u.rol) AS rol_nombre

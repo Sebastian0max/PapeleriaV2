@@ -128,6 +128,61 @@ function ConfirmModal({ isOpen, title, content, onConfirm, onCancel }) {
   );
 }
 
+function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
+  const [password, setPassword] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!isOpen) return null;
+
+  async function handleConfirm() {
+    if (!password) {
+      setError("Debes ingresar la contraseña del administrador.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    const ok = await onConfirm(transaccion.id, password, motivo);
+    if (ok) {
+      setPassword("");
+      setMotivo("");
+    } else {
+      setError("Contraseña incorrecta. Intenta de nuevo.");
+    }
+    setBusy(false);
+  }
+
+  const tipoLabel = { venta: "venta", entrada: "entrada", salida: "salida", ajuste: "ajuste" }[transaccion?.tipo] || "transaccion";
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h3>Revertir {tipoLabel}</h3>
+        <p style={{ whiteSpace: "pre-line", margin: "16px 0" }}>
+          Producto: {transaccion?.producto_nombre}{"\n"}
+          Cantidad: {transaccion?.cantidad} uds{"\n"}
+          Tipo: {transaccion?.tipo}{"\n"}
+          Fecha: {transaccion?.fecha}
+        </p>
+        {error && <p className="error" style={{ margin: "8px 0" }}>{error}</p>}
+        <label>
+          Motivo (opcional)
+          <input placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        </label>
+        <label style={{ marginTop: "8px" }}>
+          Contraseña de administrador
+          <input type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+        </label>
+        <div className="modal-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "16px" }}>
+          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? "Revertindo..." : "Confirmar reversión"}</button>
+          <button onClick={() => { setPassword(""); setMotivo(""); setError(""); onCancel(); }}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ session, onLogout }) {
   const token = session.token;
   const permissions = session.user.permisos || [];
@@ -142,6 +197,7 @@ function Dashboard({ session, onLogout }) {
   const [message, setMessage] = useState("");
   const [saleToDelete, setSaleToDelete] = useState(null);
   const [productToDelete, setProductToDelete] = useState(null);
+  const [revertTarget, setRevertTarget] = useState(null);
 
   async function confirmDeleteSale() {
     if (!saleToDelete) return;
@@ -154,6 +210,23 @@ function Dashboard({ session, onLogout }) {
       setError(err.message);
     }
     setSaleToDelete(null);
+  }
+
+  async function confirmRevert(movimientoId, password, motivo) {
+    try {
+      const result = await api(token, `/transacciones/${movimientoId}/revertir`, {
+        method: "POST",
+        body: JSON.stringify({ password, motivo: motivo || undefined })
+      });
+      setMessage(result.message || "Transaccion revertida correctamente");
+      setTimeout(() => setMessage(""), 5000);
+      setRevertTarget(null);
+      load();
+      return true;
+    } catch (err) {
+      setError(err.message);
+      return false;
+    }
   }
 
   async function confirmDeleteProduct() {
@@ -245,7 +318,7 @@ function Dashboard({ session, onLogout }) {
           <div className="panel">
             <h2>Vender</h2>
             {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
-            <TransactionsList token={token} />
+            <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} />
           </div>
           <div className="panel side-panel">
             <h2>Reportes</h2>
@@ -272,6 +345,12 @@ function Dashboard({ session, onLogout }) {
         content={productToDelete ? `Producto: ${productToDelete.nombre}\nCantidad en stock: ${productToDelete.cantidad_stock}\n\n¿Estás seguro de eliminar este producto?` : ""}
         onConfirm={confirmDeleteProduct}
         onCancel={() => setProductToDelete(null)}
+      />
+      <RevertModal
+        isOpen={!!revertTarget}
+        transaccion={revertTarget}
+        onConfirm={confirmRevert}
+        onCancel={() => setRevertTarget(null)}
       />
     </main>
   );
@@ -399,12 +478,12 @@ function SaleForm({ token, products, onDone }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   // Update selected product when product ID changes
   useEffect(() => {
     const prod = products.find(p => p.id === productoId);
     setSelectedProduct(prod || null);
-    // Reset messages when product changes
     setMessage("");
     setError("");
   }, [productoId, products]);
@@ -413,14 +492,30 @@ function SaleForm({ token, products, onDone }) {
     event.preventDefault();
     if (!productoId) return;
     if (!selectedProduct) return;
-    // Validate stock
-    if (cantidad > selectedProduct.cantidad_stock) {
-      setError(`Cantidad solicitada (${cantidad}) supera el stock disponible (${selectedProduct.cantidad_stock}).`);
+
+    if (!selectedProduct.activo) {
+      setError("No se pudo completar la venta: este producto ya no está disponible.");
       return;
     }
+
+    if (!selectedProduct.precio || selectedProduct.precio <= 0) {
+      setError("No se pudo completar la venta: el producto no tiene un precio válido configurado.");
+      return;
+    }
+
+    if (!cantidad || cantidad <= 0) {
+      setError("No se pudo completar la venta: la cantidad ingresada no es válida.");
+      return;
+    }
+
+    if (cantidad > selectedProduct.cantidad_stock) {
+      setError(`No se pudo completar la venta: solo hay ${selectedProduct.cantidad_stock} unidades disponibles de este producto.`);
+      return;
+    }
+
+    setBusy(true);
     try {
       await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
-      // Success message
       const total = selectedProduct.precio * cantidad;
       setMessage(`Venta exitosa: ${cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
@@ -428,15 +523,17 @@ function SaleForm({ token, products, onDone }) {
       setProductoId("");
       onDone();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "No se pudo completar la venta: hubo un problema de conexión, intenta nuevamente.");
       setMessage("");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <form className="sale-form" onSubmit={submit}>
-      {message && <p className="success">{message}</p>}
-      {error && <p className="error">{error}</p>}
+      {message && <div className="toast success">{message}</div>}
+      {error && <div className="toast error">{error}</div>}
       <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
         <option value="">Producto</option>
         {products.map((product) => (
@@ -446,10 +543,12 @@ function SaleForm({ token, products, onDone }) {
         ))}
       </select>
       {selectedProduct && (
-        <p className="stock-info">Stock disponible: {selectedProduct.cantidad_stock} unidades</p>
+        <div className="stock-info">
+          <strong>Stock disponible:</strong> {selectedProduct.cantidad_stock} unidades
+        </div>
       )}
       <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
-      <button title="Vender">
+      <button title="Vender" disabled={busy}>
         <ShoppingCart size={18} />
       </button>
     </form>
@@ -719,14 +818,16 @@ function ImportLogPanel({ token }) {
   );
 }
 
-function TransactionsList({ token }) {
+function TransactionsList({ token, user, onRevert, canRevert }) {
   const [transactions, setTransactions] = useState([]);
   const [filters, setFilters] = useState({ fechaDesde: "", fechaHasta: "", producto: "" });
+  const [tipoFilter, setTipoFilter] = useState("");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
   async function load(isAppend = false) {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+    if (tipoFilter) query.set("tipo", tipoFilter);
     query.set("limit", 50);
     query.set("offset", isAppend ? page * 50 : 0);
 
@@ -745,7 +846,7 @@ function TransactionsList({ token }) {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [tipoFilter]);
 
   // Agrupacion Año -> Mes -> Día
   const grouped = useMemo(() => {
@@ -766,6 +867,14 @@ function TransactionsList({ token }) {
     return map;
   }, [transactions]);
 
+  const TIPOS = [
+    { value: "", label: "Todas", color: "#64748b" },
+    { value: "venta", label: "Ventas", color: "#1e3a8a" },
+    { value: "entrada", label: "Entradas", color: "#166534" },
+    { value: "salida", label: "Salidas", color: "#991b1b" },
+    { value: "ajuste", label: "Ajustes", color: "#92400e" }
+  ];
+
   return (
     <div className="transactions-list">
       <div className="filters" style={{ margin: "20px 0", background: "#f8fafc", padding: "12px", borderRadius: "8px" }}>
@@ -773,6 +882,21 @@ function TransactionsList({ token }) {
         <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
         <input placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={() => load(false)}>Filtrar</button>
+      </div>
+
+      <div className="tipo-tabs" style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+        {TIPOS.map(t => (
+          <button
+            key={t.value}
+            className={`tipo-tab ${tipoFilter === t.value ? "active" : ""}`}
+            style={{
+              background: tipoFilter === t.value ? t.color : "#e8eff0",
+              color: tipoFilter === t.value ? "white" : "#263235",
+              border: 0, borderRadius: "6px", padding: "6px 14px", cursor: "pointer", fontWeight: "bold", fontSize: "0.85rem"
+            }}
+            onClick={() => setTipoFilter(t.value)}
+          >{t.label}</button>
+        ))}
       </div>
 
       <div className="timeline">
@@ -787,11 +911,20 @@ function TransactionsList({ token }) {
                     <strong style={{ display: "block", marginBottom: "8px", color: "#64748b", fontSize: "0.9rem" }}>{dateKey}</strong>
                     <div className="table" style={{ marginBottom: "16px" }}>
                       {grouped[year][month][dateKey].map(t => (
-                        <div className="row" key={t.id} style={{ display: "grid", gridTemplateColumns: "70px 80px 1fr 90px auto", background: "#fff", padding: "8px 12px" }}>
+                        <div className="row" key={t.id} style={{ display: "grid", gridTemplateColumns: "70px 80px 1fr 90px auto", background: t.revertida ? "#f1f5f9" : "#fff", padding: "8px 12px", opacity: t.revertida ? 0.7 : 1 }}>
                           <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>{t.fecha.split(" ")[1]}</span>
-                          <span className={`badge ${t.tipo}`}>{t.tipo}</span>
-                          <div><strong>{t.producto_nombre}</strong><span style={{ fontSize: "0.85rem", color: "#64748b", display: "block" }}>Por: {t.usuario_nombre} {t.nota ? `- ${t.nota}` : ""}</span></div>
-                          <span className="stock-col" style={{ fontWeight: "bold" }}>{t.cantidad} uds</span>
+                          <span className={`badge ${t.tipo}`} style={t.revertida ? { textDecoration: "line-through" } : {}}>{t.tipo}</span>
+                          <div>
+                            <strong style={t.revertida ? { textDecoration: "line-through", color: "#94a3b8" } : {}}>{t.producto_nombre}</strong>
+                            <span style={{ fontSize: "0.85rem", color: "#64748b", display: "block" }}>
+                              Por: {t.usuario_nombre} {t.nota ? `- ${t.nota}` : ""}
+                              {t.revertida && <span style={{ color: "#991b1b", fontWeight: "bold" }}> (REVERTIDA{t.revertida_por_usuario ? ` por ${t.revertida_por_usuario}` : ""}{t.motivo_reversion ? `: ${t.motivo_reversion}` : ""})</span>}
+                            </span>
+                          </div>
+                          <span className="stock-col" style={{ fontWeight: "bold", textDecoration: t.revertida ? "line-through" : "none" }}>{t.cantidad} uds</span>
+                          {canRevert && !t.revertida && (
+                            <button className="danger" style={{ width: "auto", padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => onRevert(t)} title="Revertir transaccion">Revertir</button>
+                          )}
                         </div>
                       ))}
                     </div>

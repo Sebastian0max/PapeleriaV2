@@ -133,6 +133,42 @@ button {
   grid-template-columns: 1fr 80px 42px;
   gap: 8px;
 }
+
+.stock-info {
+  grid-column: 1 / -1;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  color: #166534;
+  font-size: 0.9rem;
+}
+
+.toast {
+  grid-column: 1 / -1;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.toast.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.toast.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .table { display: grid; gap: 8px; }
 .row {
   min-height: 58px;

@@ -103,6 +103,16 @@ export function runMigrations(db) {
     CREATE INDEX IF NOT EXISTS idx_productos_nombre_normalizado
     ON productos(nombre_normalizado);
 
+    CREATE TABLE IF NOT EXISTS bitacora_reversiones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fecha_hora TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      usuario_id INTEGER NOT NULL,
+      movimiento_id INTEGER NOT NULL,
+      motivo TEXT,
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+      FOREIGN KEY (movimiento_id) REFERENCES movimientos(id)
+    );
+
     CREATE TABLE IF NOT EXISTS bitacora_importaciones (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       fecha_hora TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -130,6 +140,11 @@ export function runMigrations(db) {
       FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
     );
   `);
+
+  // Add reversion columns to movimientos
+  addColumn(db, "movimientos", "revertida", "INTEGER NOT NULL DEFAULT 0");
+  addColumn(db, "movimientos", "revertida_por", "INTEGER");
+  addColumn(db, "movimientos", "motivo_reversion", "TEXT");
 
   const count = db.prepare("SELECT COUNT(*) AS total FROM usuarios").get().total;
   if (count === 0) {

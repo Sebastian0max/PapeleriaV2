@@ -2,14 +2,40 @@ import { getDb } from "../db/connection.js";
 
 export function createSale({ productoId, cantidad, usuarioId }) {
   const db = getDb();
-  const product = db.prepare("SELECT * FROM productos WHERE id = ? AND activo = 1").get(productoId);
+
+  if (!productoId || typeof cantidad === "undefined" || cantidad === null) {
+    const error = new Error("No se pudo completar la venta: la cantidad ingresada no es válida.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!Number.isInteger(cantidad) || cantidad <= 0) {
+    const error = new Error("No se pudo completar la venta: la cantidad ingresada no es válida.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const product = db.prepare("SELECT * FROM productos WHERE id = ?").get(productoId);
   if (!product) {
-    const error = new Error("Producto no encontrado");
+    const error = new Error("No se pudo completar la venta: el producto no existe.");
     error.statusCode = 404;
     throw error;
   }
+
+  if (!product.activo) {
+    const error = new Error("No se pudo completar la venta: este producto ya no está disponible.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (!product.precio || product.precio <= 0) {
+    const error = new Error("No se pudo completar la venta: el producto no tiene un precio válido configurado.");
+    error.statusCode = 409;
+    throw error;
+  }
+
   if (product.cantidad_stock < cantidad) {
-    const error = new Error("Stock insuficiente para vender");
+    const error = new Error(`No se pudo completar la venta: solo hay ${product.cantidad_stock} unidades disponibles de este producto.`);
     error.statusCode = 409;
     throw error;
   }
