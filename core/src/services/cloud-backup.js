@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
+import { getDb } from "../db/connection.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
@@ -87,6 +88,8 @@ async function uploadDb() {
 
   uploading = true;
   try {
+    // Checkpoint WAL so the main DB file has all latest writes
+    try { getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch (_) {}
     const bytes = fs.readFileSync(config.dbPath);
     const res = await fetch(storageUrl(DB_OBJECT), {
       method: "POST",

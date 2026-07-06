@@ -69,149 +69,44 @@ export function revertTransaction({ movimientoId, usuarioId, motivo }) {
     throw error;
   }
 
-  if (original.tipo === "venta") {
-    // Revertir venta = sumar stock
-    const tx = () => {
-      db.exec("BEGIN");
-
-      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock + ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(original.cantidad, original.producto_id);
-
-      db.prepare(`
-        INSERT INTO movimientos (producto_id, tipo, cantidad, usuario_id, nota, revertida, revertida_por, motivo_reversion)
-        VALUES (?, 'entrada', ?, ?, ?, 0, ?, ?)
-      `).run(
-        original.producto_id,
-        original.cantidad,
-        usuarioId,
-        `Reversion de ${original.tipo} #${original.id}: ${original.producto_nombre}${motivo ? ` - ${motivo}` : ""}`,
-        null,
-        motivo || null
-      );
-
-      db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
-        .run(usuarioId, motivo || null, movimientoId);
-
-      db.prepare(`
-        INSERT INTO bitacora_reversiones (usuario_id, movimiento_id, motivo)
-        VALUES (?, ?, ?)
-      `).run(usuarioId, movimientoId, motivo || null);
-
-      db.prepare(`
-        INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
-        VALUES (?, 'movimiento', ?, 'revertir', ?)
-      `).run(usuarioId, movimientoId, motivo || "Reversion de transaccion");
-
-      db.exec("COMMIT");
-    };
-
-    try {
-      tx();
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
-
-    return { reverted: true, message: "Venta revertida correctamente. El stock fue restaurado." };
+  const stockOp = original.tipo === "entrada" ? -original.cantidad : original.cantidad;
+  if (stockOp < 0 && original.stock_actual < -stockOp) {
+    const error = new Error(`No se puede revertir esta ${original.tipo}: el stock actual (${original.stock_actual}) es menor que la cantidad a revertir (${-stockOp}).`);
+    error.statusCode = 409;
+    throw error;
   }
 
-  if (original.tipo === "entrada") {
-    // Revertir entrada = restar stock
-    if (original.stock_actual < original.cantidad) {
-      const error = new Error(`No se puede revertir esta entrada: el stock actual (${original.stock_actual}) es menor que la cantidad a revertir (${original.cantidad}).`);
-      error.statusCode = 409;
-      throw error;
-    }
+  const tx = () => {
+    db.exec("BEGIN");
 
-    const tx = () => {
-      db.exec("BEGIN");
+    db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock + ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(stockOp, original.producto_id);
 
-      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock - ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(original.cantidad, original.producto_id);
+    db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
+      .run(usuarioId, motivo || null, movimientoId);
 
-      db.prepare(`
-        INSERT INTO movimientos (producto_id, tipo, cantidad, usuario_id, nota, revertida, revertida_por, motivo_reversion)
-        VALUES (?, 'salida', ?, ?, ?, 0, ?, ?)
-      `).run(
-        original.producto_id,
-        original.cantidad,
-        usuarioId,
-        `Reversion de ${original.tipo} #${original.id}: ${original.producto_nombre}${motivo ? ` - ${motivo}` : ""}`,
-        null,
-        motivo || null
-      );
+    db.prepare(`
+      INSERT INTO bitacora_reversiones (usuario_id, movimiento_id, motivo)
+      VALUES (?, ?, ?)
+    `).run(usuarioId, movimientoId, motivo || null);
 
-      db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
-        .run(usuarioId, motivo || null, movimientoId);
+    db.prepare(`
+      INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
+      VALUES (?, 'movimiento', ?, 'revertir', ?)
+    `).run(usuarioId, movimientoId, motivo || "Reversion de transaccion");
 
-      db.prepare(`
-        INSERT INTO bitacora_reversiones (usuario_id, movimiento_id, motivo)
-        VALUES (?, ?, ?)
-      `).run(usuarioId, movimientoId, motivo || null);
+    db.exec("COMMIT");
+  };
 
-      db.prepare(`
-        INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
-        VALUES (?, 'movimiento', ?, 'revertir', ?)
-      `).run(usuarioId, movimientoId, motivo || "Reversion de transaccion");
-
-      db.exec("COMMIT");
-    };
-
-    try {
-      tx();
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
-
-    return { reverted: true, message: "Entrada revertida correctamente. El stock fue ajustado." };
+  try {
+    tx();
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 
-  if (original.tipo === "salida" || original.tipo === "ajuste") {
-    // Revertir salida/ajuste = sumar stock
-    const tx = () => {
-      db.exec("BEGIN");
-
-      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock + ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(original.cantidad, original.producto_id);
-
-      db.prepare(`
-        INSERT INTO movimientos (producto_id, tipo, cantidad, usuario_id, nota, revertida, revertida_por, motivo_reversion)
-        VALUES (?, 'entrada', ?, ?, ?, 0, ?, ?)
-      `).run(
-        original.producto_id,
-        original.cantidad,
-        usuarioId,
-        `Reversion de ${original.tipo} #${original.id}: ${original.producto_nombre}${motivo ? ` - ${motivo}` : ""}`,
-        null,
-        motivo || null
-      );
-
-      db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
-        .run(usuarioId, motivo || null, movimientoId);
-
-      db.prepare(`
-        INSERT INTO bitacora_reversiones (usuario_id, movimiento_id, motivo)
-        VALUES (?, ?, ?)
-      `).run(usuarioId, movimientoId, motivo || null);
-
-      db.prepare(`
-        INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
-        VALUES (?, 'movimiento', ?, 'revertir', ?)
-      `).run(usuarioId, movimientoId, motivo || "Reversion de transaccion");
-
-      db.exec("COMMIT");
-    };
-
-    try {
-      tx();
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
-
-    return { reverted: true, message: `${original.tipo === "salida" ? "Salida" : "Ajuste"} revertido correctamente. El stock fue restaurado.` };
-  }
+  const tipoLabel = { venta: "Venta", entrada: "Entrada", salida: "Salida", ajuste: "Ajuste" }[original.tipo] || "Transaccion";
+  return { reverted: true, message: `${tipoLabel} revertida correctamente. El stock fue ajustado.` };
 
   const error = new Error("Tipo de transaccion no soportado para reversion.");
   error.statusCode = 400;

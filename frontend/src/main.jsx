@@ -859,16 +859,13 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  async function load(isAppend = false) {
-    const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
-    if (tipoFilter === "revertida") {
-      query.set("revertida", "1");
-    } else if (tipoFilter) {
-      query.set("tipo", tipoFilter);
-      query.set("revertida", "0");
-    } else {
-      query.set("revertida", "0");
-    }
+    async function load(isAppend = false) {
+      const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+      if (tipoFilter === "revertida") {
+        query.set("revertida", "1");
+      } else if (tipoFilter) {
+        query.set("tipo", tipoFilter);
+      }
     query.set("limit", 50);
     query.set("offset", isAppend ? page * 50 : 0);
 

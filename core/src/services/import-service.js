@@ -16,18 +16,19 @@ const HEADER_ALIASES = {
     "nombre", "producto", "productos", "descripcion", "descripcion_producto",
     "item", "articulo", "articulo_producto", "name", "product", "description",
     "product_name", "nombre_producto", "desc", "detalle", "material",
-    "nombre_articulo", "titulo"
+    "nombre_articulo", "titulo", "nombre_del_producto", "nom_producto"
   ],
   cantidad: [
     "cantidad", "cant", "stock", "existencia", "existencias", "inventario",
     "cantidad_stock", "stock_actual", "unidades", "qty", "quantity",
     "available", "on_hand", "piezas", "pzas", "pza", "und", "unds",
-    "disponible", "en_stock", "total_stock"
+    "disponible", "en_stock", "total_stock", "cant", "stock_total"
   ],
   precio: [
     "precio", "precio_venta", "valor", "valor_unitario", "pvp", "price",
     "sale_price", "unit_price", "costo", "precio_unitario", "pv",
-    "precio_publico", "tarifa", "importe"
+    "precio_publico", "tarifa", "importe", "precio_de_venta",
+    "precio_vta", "precio_venta_publico"
   ],
   categoria: [
     "categoria", "category", "familia", "linea", "grupo", "seccion",
@@ -431,8 +432,10 @@ function normalizeImportRow(row) {
   
   const parseNumOrUndef = (obj) => {
     if (!obj.present) return undefined;
+    const trimmed = String(obj.value).trim();
+    if (trimmed === "" || trimmed === "-" || trimmed === "--" || trimmed === "n/a") return undefined;
     const n = parseNumber(obj.value);
-    return Number.isNaN(n) ? undefined : n; // Si no es un número válido y estaba presente, devuelve undefined para luego dar error
+    return Number.isNaN(n) ? undefined : n;
   };
 
   const precio = parseNumOrUndef(precioObj);
