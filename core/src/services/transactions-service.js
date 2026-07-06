@@ -30,6 +30,9 @@ export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHast
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
 
+  const trashFilter = "p.en_papelera = 0";
+  const whereClause = where ? `${where} AND ${trashFilter}` : `WHERE ${trashFilter}`;
+
   const data = db.prepare(`
     SELECT m.*, 
            p.nombre AS producto_nombre, 
@@ -38,7 +41,7 @@ export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHast
     FROM movimientos m
     JOIN productos p ON m.producto_id = p.id
     JOIN usuarios u ON m.usuario_id = u.id
-    ${where}
+    ${whereClause}
     ORDER BY m.revertida ASC, m.fecha DESC
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
@@ -47,7 +50,7 @@ export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHast
     SELECT COUNT(*) AS total
     FROM movimientos m
     JOIN productos p ON m.producto_id = p.id
-    ${where}
+    ${whereClause}
   `).get(...params).total;
 
   return { transactions: data, total, limit, offset };

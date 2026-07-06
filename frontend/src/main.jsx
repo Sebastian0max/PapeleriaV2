@@ -865,6 +865,9 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
         query.set("revertida", "1");
       } else if (tipoFilter) {
         query.set("tipo", tipoFilter);
+        query.set("revertida", "0");
+      } else {
+        query.set("revertida", "0");
       }
     query.set("limit", 50);
     query.set("offset", isAppend ? page * 50 : 0);
