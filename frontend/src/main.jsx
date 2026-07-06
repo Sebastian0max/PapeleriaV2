@@ -396,23 +396,62 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
 function SaleForm({ token, products, onDone }) {
   const [productoId, setProductoId] = useState("");
   const [cantidad, setCantidad] = useState(1);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  // Update selected product when product ID changes
+  useEffect(() => {
+    const prod = products.find(p => p.id === productoId);
+    setSelectedProduct(prod || null);
+    // Reset messages when product changes
+    setMessage("");
+    setError("");
+  }, [productoId, products]);
 
   async function submit(event) {
     event.preventDefault();
     if (!productoId) return;
-    await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
-    setCantidad(1);
-    onDone();
+    if (!selectedProduct) return;
+    // Validate stock
+    if (cantidad > selectedProduct.cantidad_stock) {
+      setError(`Cantidad solicitada (${cantidad}) supera el stock disponible (${selectedProduct.cantidad_stock}).`);
+      return;
+    }
+    try {
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
+      // Success message
+      const total = selectedProduct.precio * cantidad;
+      setMessage(`Venta exitosa: ${cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
+      setError("");
+      setCantidad(1);
+      setProductoId("");
+      onDone();
+    } catch (err) {
+      setError(err.message);
+      setMessage("");
+    }
   }
 
   return (
     <form className="sale-form" onSubmit={submit}>
+      {message && <p className="success">{message}</p>}
+      {error && <p className="error">{error}</p>}
       <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
         <option value="">Producto</option>
-        {products.map((product) => <option key={product.id} value={product.id}>{product.nombre}</option>)}
+        {products.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.nombre}
+          </option>
+        ))}
       </select>
+      {selectedProduct && (
+        <p className="stock-info">Stock disponible: {selectedProduct.cantidad_stock} unidades</p>
+      )}
       <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
-      <button title="Vender"><ShoppingCart size={18} /></button>
+      <button title="Vender">
+        <ShoppingCart size={18} />
+      </button>
     </form>
   );
 }
