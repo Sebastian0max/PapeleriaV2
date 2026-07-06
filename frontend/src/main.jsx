@@ -830,6 +830,28 @@ function ImportLogPanel({ token }) {
   );
 }
 
+// Mapa de meses en español a número
+const MONTH_MAP = {
+  enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+  julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
+};
+
+function sortDays(monthObj) {
+  const keys = Object.keys(monthObj);
+  keys.sort((a, b) => {
+    const dayA = parseInt(a, 10);
+    const dayB = parseInt(b, 10);
+    return dayB - dayA;
+  });
+  return keys;
+}
+
+function sortMonths(yearObj) {
+  const keys = Object.keys(yearObj);
+  keys.sort((a, b) => (MONTH_MAP[b] || 0) - (MONTH_MAP[a] || 0));
+  return keys;
+}
+
 function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
   const [transactions, setTransactions] = useState([]);
   const [filters, setFilters] = useState({ fechaDesde: "", fechaHasta: "", producto: "" });
@@ -935,10 +957,10 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
         {Object.keys(grouped).sort((a, b) => b - a).map(year => (
           <div key={year} className="tl-year">
             <h3 style={{ fontSize: "1.2rem", margin: "16px 0 8px", color: "#0f172a" }}>{year}</h3>
-            {Object.keys(grouped[year]).map(month => (
+            {sortMonths(grouped[year]).map(month => (
               <div key={month} className="tl-month" style={{ paddingLeft: "12px" }}>
                 <h4 style={{ textTransform: "capitalize", color: "#334155", margin: "12px 0 8px" }}>{month}</h4>
-                {Object.keys(grouped[year][month]).map(dateKey => (
+                {sortDays(grouped[year][month]).map(dateKey => (
                   <div key={dateKey} className="tl-day" style={{ paddingLeft: "12px" }}>
                     <strong style={{ display: "block", marginBottom: "8px", color: "#64748b", fontSize: "0.9rem" }}>{dateKey}</strong>
                     <div className="table" style={{ marginBottom: "16px" }}>
