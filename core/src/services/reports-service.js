@@ -16,11 +16,23 @@ export function getStockReport() {
       GROUP BY p.id
       ORDER BY cantidad DESC
     `).all(),
-    menosVendidos: db.prepare(`
+    menosVendidosSemana: db.prepare(`
       SELECT p.id, p.nombre, p.cantidad_stock, COALESCE(SUM(v.cantidad), 0) AS vendidos
       FROM productos p
       LEFT JOIN ventas v ON v.producto_id = p.id AND v.anulada = 0
-      WHERE p.activo = 1 AND p.en_papelera = 0
+        AND strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime')
+        AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')
+      WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
+      GROUP BY p.id
+      ORDER BY vendidos ASC, p.nombre ASC
+      LIMIT 10
+    `).all(),
+    menosVendidosMes: db.prepare(`
+      SELECT p.id, p.nombre, p.cantidad_stock, COALESCE(SUM(v.cantidad), 0) AS vendidos
+      FROM productos p
+      LEFT JOIN ventas v ON v.producto_id = p.id AND v.anulada = 0
+        AND strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')
+      WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
       GROUP BY p.id
       ORDER BY vendidos ASC, p.nombre ASC
       LIMIT 10
