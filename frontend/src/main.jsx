@@ -229,6 +229,15 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const [productToDelete, setProductToDelete] = useState(null);
   const [revertTarget, setRevertTarget] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  function toggleExportMenu() { setShowExportMenu(s => !s); }
+
+  useEffect(() => {
+    if (!showExportMenu) return;
+    function close(e) { if (!e.target.closest('.export-dropdown')) setShowExportMenu(false); }
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showExportMenu]);
 
   async function confirmDeleteSale() {
     if (!saleToDelete) return;
@@ -317,8 +326,20 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           {can("reportes:ver") && <button className={view === "ganancias" ? "active" : ""} onClick={() => setView("ganancias")}><TrendingUp size={17} />Ganancias</button>}
           {showConfig && <button className={view === "config" ? "active" : ""} onClick={() => setView("config")}><Settings size={17} />Config</button>}
         </nav>
-        <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo oscuro"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button>
-        <button className="icon-button" onClick={onLogout} title="Salir"><LogOut /></button>
+        <div className="header-actions">
+          <div className="export-dropdown">
+            <button className="icon-button" onClick={toggleExportMenu} title="Exportar datos"><Download size={18} /></button>
+            {showExportMenu && (
+              <div className="export-menu">
+                <button onClick={() => { downloadExcel(token, "/exportar/productos", "productos.xlsx"); setShowExportMenu(false); }}>Productos (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/ventas", "ventas.xlsx"); setShowExportMenu(false); }}>Ventas (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/reportes", "reportes.xlsx"); setShowExportMenu(false); }}>Reportes (Excel)</button>
+              </div>
+            )}
+          </div>
+          <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo oscuro"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button>
+          <button className="icon-button" onClick={onLogout} title="Salir"><LogOut /></button>
+        </div>
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -350,10 +371,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div className="panel-tools">
-                <button className="icon-button" onClick={() => downloadExcel(token, "/exportar/productos", "productos.xlsx")} title="Exportar productos a Excel"><Download size={16} /></button>
-                <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-              </div>
+              <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
             </div>
             {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
@@ -374,7 +392,6 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel">
             <div className="panel-head">
               <h2>Vender</h2>
-              <button className="icon-button" onClick={() => downloadExcel(token, "/exportar/ventas", "ventas.xlsx")} title="Exportar ventas a Excel"><Download size={16} /></button>
             </div>
             {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
@@ -382,7 +399,6 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel side-panel">
             <div className="panel-head">
               <h2>Reportes</h2>
-              <button className="icon-button" onClick={() => downloadExcel(token, "/exportar/reportes", "reportes.xlsx")} title="Exportar reportes a Excel"><Download size={16} /></button>
             </div>
             <Report report={report} />
           </div>
