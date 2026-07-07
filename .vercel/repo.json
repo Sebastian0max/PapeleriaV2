@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_9kOAsHbzjIv6fwb8IjGJy16x6tjc",
+      "name": "papeleria-v2-frontend-ngph",
+      "directory": "frontend",
+      "orgId": "team_Tcf8toEtPL5qHoBAtP3YD44M"
+    }
+  ]
+}

@@ -334,7 +334,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       )}
 
       {view !== "config" && report && (report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
-        <div className="stock-low-banner" style={{ marginBottom: "18px", display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="dashboard-stock-alert">
           <span>⚠️</span>
           <span>
             {report.agotados?.length > 0 && <strong>{report.agotados.length} agotado(s)</strong>}
@@ -350,8 +350,8 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <button className="link-button" onClick={() => downloadExcel(token, "/exportar/productos", "productos.xlsx")} title="Exportar a Excel"><Download size={16} />Excel</button>
+              <div className="panel-tools">
+                <button className="icon-button" onClick={() => downloadExcel(token, "/exportar/productos", "productos.xlsx")} title="Exportar productos a Excel"><Download size={16} /></button>
                 <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
               </div>
             </div>
@@ -374,7 +374,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel">
             <div className="panel-head">
               <h2>Vender</h2>
-              <button className="link-button" onClick={() => downloadExcel(token, "/exportar/ventas", "ventas.xlsx")} title="Exportar ventas a Excel"><Download size={16} />Excel Ventas</button>
+              <button className="icon-button" onClick={() => downloadExcel(token, "/exportar/ventas", "ventas.xlsx")} title="Exportar ventas a Excel"><Download size={16} /></button>
             </div>
             {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
@@ -382,7 +382,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel side-panel">
             <div className="panel-head">
               <h2>Reportes</h2>
-              <button className="link-button" onClick={() => downloadExcel(token, "/exportar/reportes", "reportes.xlsx")} title="Exportar reportes a Excel"><Download size={16} />Excel</button>
+              <button className="icon-button" onClick={() => downloadExcel(token, "/exportar/reportes", "reportes.xlsx")} title="Exportar reportes a Excel"><Download size={16} /></button>
             </div>
             <Report report={report} />
           </div>
@@ -455,7 +455,7 @@ function ProductForm({ token, onDone }) {
   }
 
   return (
-    <form className="product-form" onSubmit={submit} style={{ gridTemplateColumns: "1fr 150px 130px 130px 42px 42px" }}>
+    <form className="product-form" onSubmit={submit}>
       <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Nombre de producto</span><input required placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
       <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Unidades en stock</span><input required type="number" min="0" placeholder="Unidades" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
       <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Precio de venta</span><input required type="number" min="0" placeholder="Precio" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
@@ -511,8 +511,8 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
 
   if (isEditing) {
     return (
-      <div className="row product-row" style={{ gridTemplateColumns: "1fr auto" }}>
-        <div style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 100px 100px 100px" }}>
+      <div className="row product-row-edit">
+        <div className="edit-fields">
           <input placeholder="Nombre" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} />
           <div className="stock-col"><input type="number" placeholder="Cantidad" style={{ width: "100%" }} value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></div>
           <input type="number" placeholder="Precio" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} />
@@ -627,17 +627,17 @@ function SaleForm({ token, products, onDone }) {
         <ShoppingCart size={18} />
       </button>
       {selectedProduct && cantidad > 0 && (
-        <div className="stock-info" style={{ textAlign: "center", fontWeight: "bold", fontSize: "1.1rem" }}>
-          Total a cobrar: <span style={{ color: "var(--accent)" }}>${total.toLocaleString()}</span>
+        <div className="stock-info total-display">
+          Total a cobrar: <span>${total.toLocaleString()}</span>
         </div>
       )}
       {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
-        <div className="stock-low-banner" style={{ textAlign: "center" }}>
+        <div className="stock-low-banner">
           ⚠️ Este producto se vende por debajo de su costo (${selectedProduct.costo.toLocaleString()})
         </div>
       )}
       {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
-        <div className="stock-low-banner" style={{ textAlign: "center" }}>
+        <div className="stock-low-banner">
           ⚠️ Margen bajo: {(100 * (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio).toFixed(1)}% de ganancia
         </div>
       )}
@@ -1193,22 +1193,24 @@ function Ganancias({ token }) {
     { value: "mes", label: "Mes" }
   ];
 
+  const perdidaCls = "col-perdida";
+  const margenBajoCls = "col-margen-bajo";
+
   return (
-    <section className="panel" style={{ width: "100%" }}>
+    <section className="panel ganancias-section">
       <div className="panel-head">
         <h2>Ganancias por producto</h2>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div className="period-filters">
           {periodos.map(p => (
-            <button key={p.value} className={periodo === p.value ? "active" : ""}
+            <button key={p.value} className={`period-btn${periodo === p.value ? " active" : ""}`}
               onClick={() => setPeriodo(p.value)}
-              style={periodo === p.value ? {} : { background: "var(--tab-bg)", color: "var(--tab-text)" }}
             >{p.label}</button>
           ))}
         </div>
       </div>
 
       {!loading && (
-        <div className="metrics" style={{ marginBottom: "16px" }}>
+        <div className="metrics ganancias-metrics">
           <Metric icon={<TrendingUp />} label="Ganancia total" value={`$${data.totalGanancia.toLocaleString()}`} />
           <Metric icon={<ShoppingCart />} label="Ingresos totales" value={`$${data.totalIngresos.toLocaleString()}`} />
           <Metric icon={<Boxes />} label="Productos" value={data.products.length} />
@@ -1216,8 +1218,8 @@ function Ganancias({ token }) {
       )}
 
       {!loading && evolution.length > 0 && (
-        <div className="panel" style={{ padding: "16px" }}>
-          <h3 style={{ margin: "0 0 12px" }}>Evolución últimos 30 días</h3>
+        <div className="chart-box">
+          <h3>Evolución últimos 30 días</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={evolution} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1251,13 +1253,13 @@ function Ganancias({ token }) {
                 </div>
                 <span className="stock-col">${(p.costo || 0).toLocaleString()}</span>
                 <span className="stock-col">${p.precio.toLocaleString()}</span>
-                <span className="stock-col" style={{ color: perdida ? "var(--danger)" : "var(--accent)", fontWeight: "bold" }}>
+                <span className={`stock-col ${perdida ? perdidaCls : ""}`}>
                   {perdida ? "-" : "+"}${Math.abs(p.ganancia_unitaria).toLocaleString()}
                 </span>
-                <span className="stock-col" style={{ color: perdida ? "var(--danger)" : p.margen < 10 ? "var(--warning-text)" : "var(--accent)", fontWeight: "bold" }}>
+                <span className={`stock-col ${perdida ? perdidaCls : p.margen < 10 ? margenBajoCls : ""}`}>
                   {p.margen}%
                 </span>
-                <span className="stock-col" style={{ fontWeight: "bold", color: "var(--accent)" }}>
+                <span className="stock-col col-ganancia-total">
                   ${p.ganancia_total.toLocaleString()}
                 </span>
               </div>

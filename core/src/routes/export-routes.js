@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { getDb } from "../db/connection.js";
 
 export async function exportRoutes(app) {
-  app.get("/exportar/productos", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/productos", { preHandler: [app.authenticate] }, async (request, reply) => {
     const productos = getDb().prepare(`
       SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.stock_minimo, p.codigo_barras, p.sku, p.categoria
       FROM productos p WHERE p.eliminado = 0 ORDER BY p.nombre
@@ -19,7 +19,7 @@ export async function exportRoutes(app) {
       .header("Content-Disposition", "attachment; filename=productos.xlsx").send(buf);
   });
 
-  app.get("/exportar/ventas", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/ventas", { preHandler: [app.authenticate] }, async (request, reply) => {
     const ventas = getDb().prepare(`
       SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha, u.usuario AS vendedor
       FROM ventas v JOIN productos p ON p.id = v.producto_id LEFT JOIN usuarios u ON u.id = v.usuario_id
@@ -37,7 +37,7 @@ export async function exportRoutes(app) {
       .header("Content-Disposition", "attachment; filename=ventas.xlsx").send(buf);
   });
 
-  app.get("/exportar/reportes", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/reportes", { preHandler: [app.authenticate] }, async (request, reply) => {
     const db = getDb();
     const hoy = new Date().toISOString().split("T")[0];
     const semana = new Date(Date.now() - 7 * 864e5).toISOString().split("T")[0];

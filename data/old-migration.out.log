@@ -1,0 +1,7 @@
+{"level":30,"time":1783114180854,"pid":10248,"hostname":"BUENAVENTURA","msg":"Server listening at http://127.0.0.1:4000"}
+{"level":30,"time":1783114181153,"pid":10248,"hostname":"BUENAVENTURA","reqId":"req-1","req":{"method":"GET","url":"/health","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49317},"msg":"incoming request"}
+{"level":30,"time":1783114181171,"pid":10248,"hostname":"BUENAVENTURA","reqId":"req-1","res":{"statusCode":200},"responseTime":14.667499999981374,"msg":"request completed"}
+{"level":30,"time":1783114181343,"pid":10248,"hostname":"BUENAVENTURA","reqId":"req-2","req":{"method":"POST","url":"/auth/login","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49317},"msg":"incoming request"}
+{"level":30,"time":1783114181522,"pid":10248,"hostname":"BUENAVENTURA","reqId":"req-2","res":{"statusCode":200},"responseTime":178.45069999992847,"msg":"request completed"}
+{"level":30,"time":1783114181537,"pid":10248,"hostname":"BUENAVENTURA","reqId":"req-3","req":{"method":"GET","url":"/productos","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49317},"msg":"incoming request"}
+{"level":30,"time":1783114181543,"pid":10248,"hostname":"BUENAVENTURA","reqId":"req-3","res":{"statusCode":200},"responseTime":5.869200000073761,"msg":"request completed"}

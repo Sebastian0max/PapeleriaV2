@@ -1,0 +1,11 @@
+{"level":30,"time":1783115470501,"pid":10436,"hostname":"BUENAVENTURA","msg":"Server listening at http://127.0.0.1:4000"}
+{"level":30,"time":1783115471766,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-1","req":{"method":"GET","url":"/health","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49552},"msg":"incoming request"}
+{"level":30,"time":1783115471772,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-1","res":{"statusCode":200},"responseTime":4.709799999836832,"msg":"request completed"}
+{"level":30,"time":1783115471978,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-2","req":{"method":"POST","url":"/auth/login","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49553},"msg":"incoming request"}
+{"level":30,"time":1783115472075,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-2","res":{"statusCode":200},"responseTime":97.24020000034943,"msg":"request completed"}
+{"level":30,"time":1783115472093,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-3","req":{"method":"POST","url":"/importaciones/preview","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49554},"msg":"incoming request"}
+{"level":30,"time":1783115472114,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-3","res":{"statusCode":200},"responseTime":20.534800000023097,"msg":"request completed"}
+{"level":30,"time":1783115472117,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-4","req":{"method":"POST","url":"/importaciones/confirmar","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49553},"msg":"incoming request"}
+{"level":30,"time":1783115472123,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-4","res":{"statusCode":200},"responseTime":5.740999999921769,"msg":"request completed"}
+{"level":30,"time":1783115472125,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-5","req":{"method":"GET","url":"/productos","host":"127.0.0.1:4000","remoteAddress":"127.0.0.1","remotePort":49554},"msg":"incoming request"}
+{"level":30,"time":1783115472128,"pid":10436,"hostname":"BUENAVENTURA","reqId":"req-5","res":{"statusCode":200},"responseTime":2.3218999998643994,"msg":"request completed"}
