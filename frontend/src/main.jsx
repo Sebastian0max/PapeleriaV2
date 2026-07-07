@@ -585,10 +585,10 @@ function Report({ report }) {
       <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${report.ventasMes.ingresos}</strong></div>
 
       <h3 style={{ marginTop: "16px" }}>Menos vendidos (semana)</h3>
-      {report.menosVendidosSemana.length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosSemana.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
+      {(report.menosVendidosSemana || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosSemana.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
       <h3 style={{ marginTop: "16px" }}>Menos vendidos (mes)</h3>
-      {report.menosVendidosMes.length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosMes.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
+      {(report.menosVendidosMes || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosMes.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
       <h3 style={{ marginTop: "16px" }}>Productos con bajo stock</h3>
       {(report.agotados || []).map((p) => <div className="report-line" key={p.id}><span className="error">{p.nombre} (Agotado)</span><strong>{p.cantidad_stock} uds</strong></div>)}
