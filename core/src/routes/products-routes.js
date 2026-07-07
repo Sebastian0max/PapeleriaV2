@@ -7,7 +7,8 @@ const productSchema = z.object({
   categoria: z.string().optional().nullable(),
   cantidad_stock: z.coerce.number().int().nonnegative().default(0),
   stock_minimo: z.coerce.number().int().nonnegative().default(0),
-  precio: z.coerce.number().int().nonnegative()
+  precio: z.coerce.number().int().nonnegative(),
+  costo: z.coerce.number().int().nonnegative().default(0)
 }).extend({
   codigo_barras: z.string().optional().nullable(),
   imagen_url: z.string().optional().nullable()

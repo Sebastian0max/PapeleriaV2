@@ -10,7 +10,7 @@ export function listProducts({ search = "" } = {}) {
   const term = `%${search}%`;
   return getDb()
     .prepare(`
-      SELECT id, nombre, sku, codigo_barras, categoria, cantidad_stock, stock_minimo, precio, activo, imagen_url, thumbnail_url
+      SELECT id, nombre, sku, codigo_barras, categoria, cantidad_stock, stock_minimo, precio, costo, activo, imagen_url, thumbnail_url
       FROM productos
       WHERE activo = 1 AND en_papelera = 0 AND (? = '%%' OR nombre LIKE ? OR sku LIKE ? OR codigo_barras LIKE ? OR categoria LIKE ?)
       ORDER BY COALESCE(categoria, 'General') ASC, nombre ASC
@@ -22,8 +22,8 @@ export function createProduct(input) {
   const payload = normalizeProductInput(input);
   const result = getDb()
     .prepare(`
-      INSERT INTO productos (nombre, nombre_normalizado, sku, codigo_barras, categoria, cantidad_stock, stock_minimo, precio, imagen_url)
-      VALUES (@nombre, @nombre_normalizado, @sku, @codigo_barras, @categoria, @cantidad_stock, @stock_minimo, @precio, @imagen_url)
+      INSERT INTO productos (nombre, nombre_normalizado, sku, codigo_barras, categoria, cantidad_stock, stock_minimo, precio, costo, imagen_url)
+      VALUES (@nombre, @nombre_normalizado, @sku, @codigo_barras, @categoria, @cantidad_stock, @stock_minimo, @precio, @costo, @imagen_url)
     `)
     .run(payload);
 
@@ -50,6 +50,7 @@ export function updateProduct(id, input, usuarioId) {
         cantidad_stock = @cantidad_stock,
         stock_minimo = @stock_minimo,
         precio = @precio,
+        costo = @costo,
         imagen_url = @imagen_url,
         actualizado_en = CURRENT_TIMESTAMP
     WHERE id = @id
@@ -302,6 +303,7 @@ function normalizeProductInput(input) {
     cantidad_stock: Number(input.cantidad_stock || 0),
     stock_minimo: Number(input.stock_minimo || 0),
     precio: Number(input.precio || 0),
+    costo: Number(input.costo ?? 0),
     imagen_url: cleanOptional(input.imagen_url)
   };
 }

@@ -10,16 +10,22 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "build": "node -e \"console.log('core listo')\""
+    "build": "node -e \"console.log('core listo')\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
     "@fastify/jwt": "^10.0.0",
     "@fastify/multipart": "^9.0.3",
+    "@sentry/node": "^10.63.0",
     "bcryptjs": "^3.0.2",
     "fastify": "^5.4.0",
     "jimp": "^1.6.1",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
   }
 }

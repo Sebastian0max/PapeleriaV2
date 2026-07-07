@@ -91,6 +91,7 @@ export function runMigrations(db) {
 
   addColumn(db, "usuarios", "rol_id", "INTEGER");
   addColumn(db, "productos", "codigo_barras", "TEXT");
+  addColumn(db, "productos", "costo", "INTEGER NOT NULL DEFAULT 0 CHECK (costo >= 0)");
   addColumn(db, "productos", "imagen_url", "TEXT");
   addColumn(db, "productos", "thumbnail_url", "TEXT");
   addColumn(db, "productos", "nombre_normalizado", "TEXT");

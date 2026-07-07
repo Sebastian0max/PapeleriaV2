@@ -5,16 +5,20 @@ import {
   Download,
   ImagePlus,
   LogOut,
+  Moon,
   PackagePlus,
   Search,
   Settings,
   ShoppingCart,
+  Sun,
   Trash2,
+  TrendingUp,
   Upload,
   Users,
   RotateCcw,
   Clock
 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import "./styles.css";
 
 // Global error boundary to catch unexpected render errors
@@ -52,6 +56,21 @@ const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:4000";
 const ACTIONS = ["ver", "crear", "editar", "eliminar"];
 
 function normalizePath(p) { return '/' + p.replace(/^\/+/, '').replace(/\/+$/, ''); }
+
+async function downloadExcel(token, path, filename) {
+  const base = API_URL.replace(/\/+$/, '');
+  const res = await fetch(`${base}${normalizePath(path)}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error("Error al descargar");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 function api(token, path, options = {}) {
   const isForm = options.body instanceof FormData;
   const hasJsonBody = options.body && !isForm;
@@ -74,11 +93,19 @@ function api(token, path, options = {}) {
 
 function App() {
   const [session, setSession] = useState(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme(t => t === "dark" ? "light" : "dark");
+  }
 
   if (!session) return <Login onLogin={setSession} />;
-  return <Dashboard session={session} onLogout={() => {
-    setSession(null);
-  }} />;
+  return <Dashboard session={session} onLogout={() => { setSession(null); }} theme={theme} toggleTheme={toggleTheme} />;
 }
 
 function Login({ onLogin }) {
@@ -185,7 +212,7 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
   );
 }
 
-function Dashboard({ session, onLogout }) {
+function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const token = session.token;
   const permissions = session.user.permisos || [];
   const can = (key) => session.user.rol === "admin" || permissions.includes(key);
@@ -194,6 +221,7 @@ function Dashboard({ session, onLogout }) {
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
   const [report, setReport] = useState(null);
+  const [profitToday, setProfitToday] = useState(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -254,12 +282,14 @@ function Dashboard({ session, onLogout }) {
       const results = await Promise.allSettled([
         can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(searchOverride)}`) : Promise.resolve(null),
         can("ventas:ver") ? api(token, "/ventas") : Promise.resolve(null),
-        can("reportes:ver") ? api(token, "/reportes/stock") : Promise.resolve(null)
+        can("reportes:ver") ? api(token, "/reportes/stock") : Promise.resolve(null),
+        can("reportes:ver") ? api(token, "/reportes/ganancias?periodo=dia") : Promise.resolve(null)
       ]);
-      const [productResult, saleResult, reportResult] = results;
+      const [productResult, saleResult, reportResult, profitResult] = results;
       if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(productResult.value.products);
       if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(saleResult.value.sales);
       if (reportResult.status === "fulfilled" && reportResult.value) setReport(reportResult.value);
+      if (profitResult.status === "fulfilled" && profitResult.value) setProfitToday(profitResult.value);
       const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message).filter(Boolean);
       if (errors.length) setError(errors.join("; "));
       else setError("");
@@ -284,8 +314,10 @@ function Dashboard({ session, onLogout }) {
         <nav className="tabs">
           <button className={view === "inventario" ? "active" : ""} onClick={() => setView("inventario")}><Boxes size={17} />Inventario</button>
           <button className={view === "ventas" ? "active" : ""} onClick={() => setView("ventas")}><ShoppingCart size={17} />Transacciones</button>
+          {can("reportes:ver") && <button className={view === "ganancias" ? "active" : ""} onClick={() => setView("ganancias")}><TrendingUp size={17} />Ganancias</button>}
           {showConfig && <button className={view === "config" ? "active" : ""} onClick={() => setView("config")}><Settings size={17} />Config</button>}
         </nav>
+        <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo oscuro"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button>
         <button className="icon-button" onClick={onLogout} title="Salir"><LogOut /></button>
       </header>
 
@@ -297,7 +329,20 @@ function Dashboard({ session, onLogout }) {
           <Metric icon={<Boxes />} label="Productos" value={products.length} />
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
+          {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
         </section>
+      )}
+
+      {view !== "config" && report && (report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
+        <div className="stock-low-banner" style={{ marginBottom: "18px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span>⚠️</span>
+          <span>
+            {report.agotados?.length > 0 && <strong>{report.agotados.length} agotado(s)</strong>}
+            {report.agotados?.length > 0 && report.bajoStock?.length > 0 && " - "}
+            {report.bajoStock?.length > 0 && <strong>{report.bajoStock.length} con stock bajo</strong>}
+            {" - Revisa el panel de Stock para más detalles."}
+          </span>
+        </div>
       )}
 
       {view === "inventario" && (
@@ -305,7 +350,10 @@ function Dashboard({ session, onLogout }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button className="link-button" onClick={() => downloadExcel(token, "/exportar/productos", "productos.xlsx")} title="Exportar a Excel"><Download size={16} />Excel</button>
+                <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+              </div>
             </div>
             {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
@@ -324,16 +372,24 @@ function Dashboard({ session, onLogout }) {
       {view === "ventas" && (
         <section className="workspace">
           <div className="panel">
-            <h2>Vender</h2>
+            <div className="panel-head">
+              <h2>Vender</h2>
+              <button className="link-button" onClick={() => downloadExcel(token, "/exportar/ventas", "ventas.xlsx")} title="Exportar ventas a Excel"><Download size={16} />Excel Ventas</button>
+            </div>
             {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
-            <h2>Reportes</h2>
+            <div className="panel-head">
+              <h2>Reportes</h2>
+              <button className="link-button" onClick={() => downloadExcel(token, "/exportar/reportes", "reportes.xlsx")} title="Exportar reportes a Excel"><Download size={16} />Excel</button>
+            </div>
             <Report report={report} />
           </div>
         </section>
       )}
+
+      {view === "ganancias" && <Ganancias token={token} />}
 
       {view === "config" && <Config token={token} can={can} onImported={async (msg) => {
         if (msg) { setMessage(msg); setTimeout(() => setMessage(""), 6000); }
@@ -371,7 +427,7 @@ function Metric({ icon, label, value }) {
 }
 
 function ProductForm({ token, onDone }) {
-  const empty = { nombre: "", cantidad_stock: "", precio: "" };
+  const empty = { nombre: "", cantidad_stock: "", precio: "", costo: "" };
   const [form, setForm] = useState(empty);
   const [image, setImage] = useState(null);
 
@@ -381,6 +437,7 @@ function ProductForm({ token, onDone }) {
       nombre: form.nombre,
       cantidad_stock: Number(form.cantidad_stock) || 0,
       precio: Number(form.precio) || 0,
+      costo: Number(form.costo) || 0,
       stock_minimo: 0,
       codigo_barras: "",
       sku: "",
@@ -398,10 +455,11 @@ function ProductForm({ token, onDone }) {
   }
 
   return (
-    <form className="product-form" onSubmit={submit} style={{ gridTemplateColumns: "1fr 150px 150px 42px 42px" }}>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "#667479" }}>Nombre de producto</span><input required placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "#667479" }}>Unidades en stock</span><input required type="number" min="0" placeholder="Unidades" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "#667479" }}>Precio de venta</span><input required type="number" min="0" placeholder="Precio" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
+    <form className="product-form" onSubmit={submit} style={{ gridTemplateColumns: "1fr 150px 130px 130px 42px 42px" }}>
+      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Nombre de producto</span><input required placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
+      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Unidades en stock</span><input required type="number" min="0" placeholder="Unidades" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
+      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Precio de venta</span><input required type="number" min="0" placeholder="Precio" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
+      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Costo (opcional)</span><input type="number" min="0" placeholder="Costo" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
       <label className="file-button" title="Imagen" style={{ alignSelf: "end" }}><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
       <button title="Agregar producto" style={{ alignSelf: "end" }}><PackagePlus size={18} /></button>
     </form>
@@ -426,6 +484,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     setEditForm({
       nombre: product.nombre,
       precio: product.precio,
+      costo: product.costo ?? 0,
       cantidad_stock: product.cantidad_stock
     });
     setIsEditing(true);
@@ -436,6 +495,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
       const payload = {
         nombre: editForm.nombre,
         precio: Number(editForm.precio) || 0,
+        costo: Number(editForm.costo) || 0,
         cantidad_stock: Number(editForm.cantidad_stock) || 0
       };
       await api(token, `/productos/${product.id}`, {
@@ -452,10 +512,11 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
   if (isEditing) {
     return (
       <div className="row product-row" style={{ gridTemplateColumns: "1fr auto" }}>
-        <div style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 120px 120px" }}>
+        <div style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 100px 100px 100px" }}>
           <input placeholder="Nombre" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} />
           <div className="stock-col"><input type="number" placeholder="Cantidad" style={{ width: "100%" }} value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></div>
           <input type="number" placeholder="Precio" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} />
+          <input type="number" placeholder="Costo" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} />
         </div>
         <div className="actions">
           <button onClick={saveEdit}>Guardar</button>
@@ -464,6 +525,9 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
       </div>
     );
   }
+
+  const ganancia = product.precio - (product.costo ?? 0);
+  const margen = product.precio > 0 ? (ganancia / product.precio * 100).toFixed(1) : 0;
 
   return (
     <div className="row product-row">
@@ -490,7 +554,8 @@ function SaleForm({ token, products, onDone }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Update selected product when product ID changes
+  const total = selectedProduct && cantidad > 0 ? selectedProduct.precio * cantidad : 0;
+
   useEffect(() => {
     const prod = products.find(p => p.id === productoId);
     setSelectedProduct(prod || null);
@@ -526,7 +591,6 @@ function SaleForm({ token, products, onDone }) {
     setBusy(true);
     try {
       await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
-      const total = selectedProduct.precio * cantidad;
       setMessage(`Venta exitosa: ${cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
       setCantidad(1);
@@ -553,14 +617,30 @@ function SaleForm({ token, products, onDone }) {
         ))}
       </select>
       {selectedProduct && (
-        <div className="stock-info">
-          <strong>Stock disponible:</strong> {selectedProduct.cantidad_stock} unidades
+        <div className="stock-info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span><strong>Stock:</strong> {selectedProduct.cantidad_stock} uds</span>
+          <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
         </div>
       )}
       <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
       <button title="Vender" disabled={busy}>
         <ShoppingCart size={18} />
       </button>
+      {selectedProduct && cantidad > 0 && (
+        <div className="stock-info" style={{ textAlign: "center", fontWeight: "bold", fontSize: "1.1rem" }}>
+          Total a cobrar: <span style={{ color: "var(--accent)" }}>${total.toLocaleString()}</span>
+        </div>
+      )}
+      {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
+        <div className="stock-low-banner" style={{ textAlign: "center" }}>
+          ⚠️ Este producto se vende por debajo de su costo (${selectedProduct.costo.toLocaleString()})
+        </div>
+      )}
+      {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
+        <div className="stock-low-banner" style={{ textAlign: "center" }}>
+          ⚠️ Margen bajo: {(100 * (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio).toFixed(1)}% de ganancia
+        </div>
+      )}
     </form>
   );
 }
@@ -1080,6 +1160,112 @@ function TrashPanel({ token }) {
         </div>
       )}
     </div>
+  );
+}
+
+function Ganancias({ token }) {
+  const [data, setData] = useState({ products: [], totalGanancia: 0, totalIngresos: 0 });
+  const [evolution, setEvolution] = useState([]);
+  const [periodo, setPeriodo] = useState("mes");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [res, evo] = await Promise.all([
+        api(token, `/reportes/ganancias?periodo=${periodo}`),
+        api(token, "/reportes/ganancias/evolucion")
+      ]);
+      setData(res);
+      setEvolution(evo);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [periodo]);
+
+  const periodos = [
+    { value: "dia", label: "Hoy" },
+    { value: "semana", label: "Semana" },
+    { value: "mes", label: "Mes" }
+  ];
+
+  return (
+    <section className="panel" style={{ width: "100%" }}>
+      <div className="panel-head">
+        <h2>Ganancias por producto</h2>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {periodos.map(p => (
+            <button key={p.value} className={periodo === p.value ? "active" : ""}
+              onClick={() => setPeriodo(p.value)}
+              style={periodo === p.value ? {} : { background: "var(--tab-bg)", color: "var(--tab-text)" }}
+            >{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {!loading && (
+        <div className="metrics" style={{ marginBottom: "16px" }}>
+          <Metric icon={<TrendingUp />} label="Ganancia total" value={`$${data.totalGanancia.toLocaleString()}`} />
+          <Metric icon={<ShoppingCart />} label="Ingresos totales" value={`$${data.totalIngresos.toLocaleString()}`} />
+          <Metric icon={<Boxes />} label="Productos" value={data.products.length} />
+        </div>
+      )}
+
+      {!loading && evolution.length > 0 && (
+        <div className="panel" style={{ padding: "16px" }}>
+          <h3 style={{ margin: "0 0 12px" }}>Evolución últimos 30 días</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={evolution} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} />
+              <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${v.toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
+              <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {loading ? <p className="muted">Cargando...</p> : data.products.length === 0 ? <p className="muted">Sin datos en este periodo.</p> : (
+        <div className="table">
+          <div className="row profit-header">
+            <span>Producto</span>
+            <span className="stock-col">Costo</span>
+            <span className="stock-col">Venta</span>
+            <span className="stock-col">Ganancia/unidad</span>
+            <span className="stock-col">Margen</span>
+            <span className="stock-col">Ganancia total</span>
+          </div>
+          {data.products.map(p => {
+            const sinCosto = !p.costo || p.costo <= 0;
+            const perdida = p.costo > p.precio;
+            return (
+              <div className="row profit-row" key={p.id}>
+                <div>
+                  <strong>{p.nombre}</strong>
+                  {sinCosto && <span className="sin-costo">Sin costo registrado</span>}
+                </div>
+                <span className="stock-col">${(p.costo || 0).toLocaleString()}</span>
+                <span className="stock-col">${p.precio.toLocaleString()}</span>
+                <span className="stock-col" style={{ color: perdida ? "var(--danger)" : "var(--accent)", fontWeight: "bold" }}>
+                  {perdida ? "-" : "+"}${Math.abs(p.ganancia_unitaria).toLocaleString()}
+                </span>
+                <span className="stock-col" style={{ color: perdida ? "var(--danger)" : p.margen < 10 ? "var(--warning-text)" : "var(--accent)", fontWeight: "bold" }}>
+                  {p.margen}%
+                </span>
+                <span className="stock-col" style={{ fontWeight: "bold", color: "var(--accent)" }}>
+                  ${p.ganancia_total.toLocaleString()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

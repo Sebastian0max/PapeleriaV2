@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
 import { authRoutes } from "./routes/auth-routes.js";
+import { exportRoutes } from "./routes/export-routes.js";
 import { importRoutes } from "./routes/import-routes.js";
 import { productRoutes } from "./routes/products-routes.js";
 import { reportsRoutes } from "./routes/reports-routes.js";
@@ -14,6 +15,7 @@ import { salesRoutes } from "./routes/sales-routes.js";
 import { transactionsRoutes } from "./routes/transactions-routes.js";
 import { userRoutes } from "./routes/users-routes.js";
 import { getUserWithPermissions, hasPermission } from "./services/permissions-service.js";
+import { initSentry } from "./services/sentry.js";
 
 export function buildApp() {
   const app = Fastify({ logger: true });
@@ -62,6 +64,7 @@ export function buildApp() {
     return reply.type(type).send(fs.createReadStream(fullPath));
   });
   app.register(authRoutes, { prefix: "/auth" });
+  app.register(exportRoutes, { prefix: "/exportar" });
   app.register(productRoutes, { prefix: "/productos" });
   app.register(salesRoutes, { prefix: "/ventas" });
   app.register(transactionsRoutes, { prefix: "/transacciones" });
@@ -70,11 +73,7 @@ export function buildApp() {
   app.register(roleRoutes, { prefix: "/roles" });
   app.register(importRoutes, { prefix: "/importaciones" });
 
-  app.setErrorHandler((error, request, reply) => {
-    const status = error.statusCode || 500;
-    request.log.error(error);
-    reply.code(status).send({ message: error.message || "Error interno" });
-  });
+  initSentry(app);
 
   return app;
 }
