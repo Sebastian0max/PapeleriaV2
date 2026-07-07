@@ -224,6 +224,17 @@ function backfillUsersAndProducts(db) {
   for (const product of products) {
     update.run(normalizeName(product.nombre), product.id);
   }
+
+  // Backfill: mark ventas as anulada for already-reverted sale-type movimientos
+  const revertedSales = db.prepare("SELECT id, nota FROM movimientos WHERE tipo = 'venta' AND revertida = 1").all();
+  const markAnulada = db.prepare("UPDATE ventas SET anulada = 1 WHERE id = ? AND anulada = 0");
+  for (const mov of revertedSales) {
+    if (mov.nota) {
+      const match = mov.nota.match(/Venta #(\d+)/);
+      if (match) markAnulada.run(Number(match[1]));
+    }
+  }
+  if (revertedSales.length > 0) console.log(`[backfill] Marcadas ${revertedSales.length} ventas como anuladas por reversión existente.`);
 }
 
 function normalizeName(value) {
