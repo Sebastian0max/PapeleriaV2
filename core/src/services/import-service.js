@@ -517,11 +517,11 @@ function pickProductValues(product) {
 
 function toProductPayload(item) {
   return {
-    codigo_barras: item.codigo_barras,
-    sku: item.sku,
+    codigo_barras: item.codigo_barras ?? null,
+    sku: item.sku ?? null,
     nombre: item.nombre,
     nombre_normalizado: item.nombre_normalizado,
-    categoria: item.categoria,
+    categoria: item.categoria !== undefined ? item.categoria : null,
     cantidad_stock: item.cantidad_stock !== undefined ? item.cantidad_stock : 0, // 0 for missing new
     stock_minimo: item.stock_minimo !== undefined ? item.stock_minimo : 0,
     precio: item.precio !== undefined && !Number.isNaN(item.precio) ? item.precio : 0
