@@ -251,21 +251,25 @@ function Dashboard({ session, onLogout }) {
 
   async function load(searchOverride = search) {
     try {
-      const tasks = [];
-      if (can("productos:ver")) tasks.push(api(token, `/productos?search=${encodeURIComponent(searchOverride)}`));
-      if (can("ventas:ver")) tasks.push(api(token, "/ventas"));
-      if (can("reportes:ver")) tasks.push(api(token, "/reportes/stock"));
-      const [productData, saleData, reportData] = await Promise.all(tasks);
-      if (productData?.products) setProducts(productData.products);
-      if (saleData?.sales) setSales(saleData.sales);
-      if (reportData) setReport(reportData);
-      setError("");
+      const results = await Promise.allSettled([
+        can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(searchOverride)}`) : Promise.resolve(null),
+        can("ventas:ver") ? api(token, "/ventas") : Promise.resolve(null),
+        can("reportes:ver") ? api(token, "/reportes/stock") : Promise.resolve(null)
+      ]);
+      const [productResult, saleResult, reportResult] = results;
+      if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(productResult.value.products);
+      if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(saleResult.value.sales);
+      if (reportResult.status === "fulfilled" && reportResult.value) setReport(reportResult.value);
+      const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message).filter(Boolean);
+      if (errors.length) setError(errors.join("; "));
+      else setError("");
     } catch (err) {
       setError(err.message);
     }
   }
 
   useEffect(() => { load(); }, [search]);
+  useEffect(() => { if (view !== "config") load(); }, [reloadKey]);
 
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
   const showConfig = session.user.rol === "admin" && can("configuracion:ver");
@@ -334,6 +338,7 @@ function Dashboard({ session, onLogout }) {
       {view === "config" && <Config token={token} can={can} onImported={async () => {
         setSearch("");
         await load("");
+        setReloadKey(k => k + 1);
         setView("inventario");
       }} />}
       <ConfirmModal

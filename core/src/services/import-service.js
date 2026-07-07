@@ -17,19 +17,22 @@ const HEADER_ALIASES = {
     "item", "articulo", "articulo_producto", "name", "product", "description",
     "product_name", "nombre_producto", "desc", "detalle", "detalles",
     "detalle_producto", "material", "nombre_articulo", "titulo",
-    "nombre_del_producto", "nom_producto"
+    "nombre_del_producto", "nom_producto", "nom",
+    "descripcion_articulo", "detalle_articulo", "articulo_nombre"
   ],
   cantidad: [
     "cantidad", "cant", "stock", "existencia", "existencias", "inventario",
-    "cantidad_stock", "stock_actual", "unidades", "qty", "quantity",
+    "cantidad_stock", "stock_actual", "unidades", "unidad", "qty", "quantity",
     "available", "on_hand", "piezas", "pzas", "pza", "und", "unds",
-    "disponible", "en_stock", "total_stock", "cant", "stock_total"
+    "disponible", "en_stock", "total_stock", "cant", "stock_total",
+    "stock_disponible", "existencia_actual", "numero_unidades", "num_unidades"
   ],
   precio: [
     "precio", "precio_venta", "valor", "valor_unitario", "pvp", "price",
     "sale_price", "unit_price", "costo", "precio_unitario", "pv",
     "precio_publico", "tarifa", "importe", "precio_de_venta",
-    "precio_vta", "precio_venta_publico"
+    "precio_vta", "precio_venta_publico", "precio_lista",
+    "precio_base", "precio_normal", "precio_regular", "precio_venta_final"
   ],
   categoria: [
     "categoria", "category", "familia", "linea", "grupo", "seccion",
@@ -573,28 +576,48 @@ function parseNumber(value) {
     .replace(/^(cop|usd|eur|mxn|col|pesos|\$|€|£)/i, "")
     .replace(/\s+/g, "");
   // Ahora solo deben quedar dígitos, comas, puntos y opcional guion
-  const cleaned = text.replace(/[^0-9,.\-]/g, "");
-  if (!cleaned) return Number.NaN;
-
-  const lastComma = cleaned.lastIndexOf(",");
-  const lastDot = cleaned.lastIndexOf(".");
-  if (lastComma >= 0 && lastDot >= 0) {
-    // Ambos separadores: el último es el decimal
-    const decimal = lastComma > lastDot ? "," : ".";
-    const thousands = decimal === "," ? "." : ",";
-    text = cleaned.split(thousands).join("").replace(decimal, ".");
-  } else if (lastComma >= 0) {
-    // Solo coma: si tiene exactamente 3 decimales -> separador de miles
-    const decimals = cleaned.length - lastComma - 1;
-    text = decimals === 3 ? cleaned.replace(/,/g, "") : cleaned.replace(",", ".");
-  } else if (lastDot >= 0) {
-    // Solo punto: si tiene exactamente 3 decimales -> separador de miles
-    const decimals = cleaned.length - lastDot - 1;
-    text = decimals === 3 ? cleaned.replace(/\./g, "") : cleaned;
-  } else {
-    text = cleaned;
+  let cleaned = text.replace(/[^0-9,.\-]/g, "");
+  if (!cleaned) {
+    // Último recurso: extraer el primer número del texto original
+    const extracted = String(value ?? "").match(/(\d+([.,]\d+)?)/);
+    if (extracted) {
+      const raw = extracted[1].replace(",", ".");
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+    return Number.NaN;
   }
 
-  const result = Number(text);
+  // Detectar si usa punto como separador de miles (ej. "1.500") o coma (ej. "1,500")
+  const commaCount = (cleaned.match(/,/g) || []).length;
+  const dotCount = (cleaned.match(/\./g) || []).length;
+
+  if (commaCount > 0 && dotCount > 0) {
+    // Ambos: el último es el decimal
+    const lastComma = cleaned.lastIndexOf(",");
+    const lastDot = cleaned.lastIndexOf(".");
+    const decimal = lastComma > lastDot ? "," : ".";
+    const thousands = decimal === "," ? "." : ",";
+    cleaned = cleaned.split(thousands).join("").replace(decimal, ".");
+  } else if (commaCount === 1 && dotCount === 0) {
+    // Una sola coma: decimal si tiene 1-2 dígitos a la derecha, miles si 3
+    const after = cleaned.length - cleaned.lastIndexOf(",") - 1;
+    if (after === 3) cleaned = cleaned.replace(/,/g, "");
+    else cleaned = cleaned.replace(",", ".");
+  } else if (dotCount === 1 && commaCount === 0) {
+    // Un solo punto: decimal si tiene 1-2 dígitos a la derecha, miles si 3
+    const after = cleaned.length - cleaned.lastIndexOf(".") - 1;
+    if (after === 3) cleaned = cleaned.replace(/\./g, "");
+    // else keep the dot as decimal separator
+  } else if (commaCount > 1) {
+    // Múltiples comas -> separador de miles, eliminar
+    cleaned = cleaned.replace(/,/g, "");
+  } else if (dotCount > 1) {
+    // Múltiples puntos -> separador de miles, eliminar
+    cleaned = cleaned.replace(/\./g, "");
+  }
+
+  cleaned = cleaned.replace(",", ".");
+  const result = Number(cleaned);
   return Number.isFinite(result) ? result : Number.NaN;
 }

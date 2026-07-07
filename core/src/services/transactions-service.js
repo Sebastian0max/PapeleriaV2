@@ -88,6 +88,15 @@ export function revertTransaction({ movimientoId, usuarioId, motivo }) {
     db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
       .run(usuarioId, motivo || null, movimientoId);
 
+    // If this was a sale, also mark the venta as anulada so reports exclude it
+    if (original.tipo === "venta" && original.nota) {
+      const match = original.nota.match(/Venta #(\d+)/);
+      if (match) {
+        db.prepare("UPDATE ventas SET anulada = 1 WHERE id = ? AND anulada = 0")
+          .run(Number(match[1]));
+      }
+    }
+
     db.prepare(`
       INSERT INTO bitacora_reversiones (usuario_id, movimiento_id, motivo)
       VALUES (?, ?, ?)
