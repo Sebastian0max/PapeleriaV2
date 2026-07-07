@@ -309,7 +309,11 @@ button {
   .metrics, .workspace, .config-grid, .role-layout { grid-template-columns: 1fr; }
   .product-form { grid-template-columns: 1fr 1fr; }
   .user-form, .upload-line, .filters { grid-template-columns: 1fr; }
-  .mini-row, .perm-row { grid-template-columns: 1fr; }
+  .mini-row { grid-template-columns: 50px 1fr; grid-template-rows: auto auto; }
+  .mini-row > :nth-child(3) { grid-column: 1; }
+  .mini-row > :nth-child(4) { grid-column: 2; }
+  .mini-row > :nth-child(5) { grid-column: 1 / -1; }
+  .perm-row { grid-template-columns: 1fr; }
   .tabs { flex-wrap: wrap; }
   .product-form button { width: 100%; }
   .search { width: 100%; }

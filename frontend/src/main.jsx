@@ -335,7 +335,8 @@ function Dashboard({ session, onLogout }) {
         </section>
       )}
 
-      {view === "config" && <Config token={token} can={can} onImported={async () => {
+      {view === "config" && <Config token={token} can={can} onImported={async (msg) => {
+        if (msg) { setMessage(msg); setTimeout(() => setMessage(""), 6000); }
         setSearch("");
         await load("");
         setReloadKey(k => k + 1);
@@ -670,10 +671,9 @@ function ImportPanel({ token, onImported }) {
     setBusy(true);
     try {
       const data = await api(token, "/importaciones/confirmar", { method: "POST", body: JSON.stringify({ token: preview.token }) });
-      setMessage(`Importacion aplicada: ${data.result.created} creados, ${data.result.updated} actualizados, ${data.result.unchanged || 0} sin cambios.`);
       setPreview(null);
       setFile(null);
-      await onImported();
+      await onImported(`Importacion aplicada: ${data.result.created} creados, ${data.result.updated} actualizados, ${data.result.unchanged || 0} sin cambios.`);
     } catch (err) {
       setMessage(err.message);
     } finally {

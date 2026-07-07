@@ -494,6 +494,7 @@ function diffProduct(existing, item) {
   const fields = ["codigo_barras", "sku", "nombre", "categoria", "cantidad_stock", "stock_minimo", "precio"];
   for (const field of fields) {
     const next = item[field];
+    if (next === undefined) continue;
     if ((field === "categoria" || field === "codigo_barras" || field === "sku") && !next) continue;
     if (String(existing[field] ?? "") !== String(next ?? "")) {
       changes.push({ campo: field, anterior: existing[field], nuevo: next });
