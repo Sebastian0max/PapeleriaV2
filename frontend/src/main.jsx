@@ -58,19 +58,29 @@ const ACTIONS = ["ver", "crear", "editar", "eliminar"];
 
 function normalizePath(p) { return '/' + p.replace(/^\/+/, '').replace(/\/+$/, ''); }
 
-async function downloadExcel(token, path, filename) {
-  const base = API_URL.replace(/\/+$/, '');
-  const res = await fetch(`${base}${normalizePath(path)}`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  if (!res.ok) throw new Error("Error al descargar");
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+async function downloadExcel(token, path, filename, onError) {
+  try {
+    const base = API_URL.replace(/\/+$/, '');
+    const res = await fetch(`${base}${normalizePath(path)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `Error del servidor (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    if (onError) onError(err.message);
+    else alert("Error al exportar: " + err.message);
+  }
 }
 function api(token, path, options = {}) {
   const isForm = options.body instanceof FormData;
@@ -332,11 +342,12 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <button className="icon-button" onClick={toggleExportMenu} title="Exportar datos"><Download size={18} /></button>
             {showExportMenu && (
               <div className="export-menu">
-                <button onClick={() => { downloadExcel(token, "/exportar/productos", "productos.xlsx"); setShowExportMenu(false); }}><FileText size={14} /> Productos (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/productos/pdf", "productos.pdf"); setShowExportMenu(false); }}><FileText size={14} /> Productos (PDF)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/ventas", "ventas.xlsx"); setShowExportMenu(false); }}><FileText size={14} /> Ventas (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/ventas/pdf", "ventas.pdf"); setShowExportMenu(false); }}><FileText size={14} /> Ventas (PDF)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/reportes", "reportes.xlsx"); setShowExportMenu(false); }}><FileText size={14} /> Reportes (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/productos", "productos.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Productos (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/productos/pdf", "productos.pdf", setError); setShowExportMenu(false); }}><FileText size={14} /> Productos (PDF)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/ventas", "ventas.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Ventas (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/ventas/pdf", "ventas.pdf", setError); setShowExportMenu(false); }}><FileText size={14} /> Ventas (PDF)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/ganancias", "ganancias.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Ganancias (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/reportes", "reportes.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Reportes (Excel)</button>
               </div>
             )}
           </div>
@@ -475,12 +486,14 @@ function ProductForm({ token, onDone }) {
 
   return (
     <form className="product-form" onSubmit={submit}>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Nombre de producto</span><input required placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Unidades en stock</span><input required type="number" min="0" placeholder="Unidades" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Precio de venta</span><input required type="number" min="0" placeholder="Precio" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
-      <label><span>Costo por unidad</span><input required={false} type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
-      <label className="file-button" title="Imagen" style={{ alignSelf: "end" }}><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
-      <button title="Agregar producto" style={{ alignSelf: "end" }}><PackagePlus size={18} /></button>
+      <label>Nombre del producto<input required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
+      <label>Cantidad en stock<input required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
+      <label>Precio de costo <small>lo que pagaste por cada unidad</small><input type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
+      <label>Precio de venta <small>lo que cobras al cliente</small><input required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
+      <label className="file-button" title="Imagen"><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
+      <button title="Agregar producto"><PackagePlus size={18} /></button>
+      {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) >= Number(form.precio) && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0 }}>⚠️ El precio de venta es menor o igual al costo. ¡Estás vendiendo a pérdida!</span>}
+      {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) < Number(form.precio) && (Number(form.precio) - Number(form.costo)) / Number(form.precio) < 0.1 && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0, background: "var(--warning-bg)", borderColor: "var(--warning-border)" }}>⚠️ Margen menor al 10%. Considera aumentar el precio de venta.</span>}
     </form>
   );
 }
@@ -532,10 +545,10 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     return (
       <div className="row product-row-edit">
         <div className="edit-fields">
-          <input placeholder="Nombre" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} />
-          <div className="stock-col"><input type="number" placeholder="Cantidad" style={{ width: "100%" }} value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></div>
-          <input type="number" placeholder="Precio" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} />
-          <input type="number" placeholder="Costo" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} />
+          <label>Nombre<input value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
+          <label>Stock<input type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
+          <label>Costo <small className="label-help">lo que pagaste</small><input type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
+          <label>Venta <small className="label-help">lo que cobras</small><input type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
         </div>
         <div className="actions">
           <button onClick={saveEdit}>Guardar</button>

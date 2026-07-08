@@ -16,7 +16,15 @@ function drawTable(doc, headers, rows, startY) {
     row.forEach((cell, i) => doc.text(String(cell ?? ""), 42 + colW * i, y, { width: colW, align: "left" }));
     y += 18;
   });
-  return y;
+}
+
+function collectStream(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on("data", c => chunks.push(c));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
 }
 
 export function generateProductosPDF(productos) {
@@ -26,13 +34,13 @@ export function generateProductosPDF(productos) {
   doc.moveDown(1.5);
   const headers = ["ID", "Nombre", "Stock", "Precio", "Costo", "Ganancia"];
   const rows = productos.map(p => [
-    p.id, p.nombre, p.cantidad_stock, `$${p.precio}`,
-    p.costo ? `$${p.costo}` : "-",
-    p.costo ? `$${p.precio - p.costo}` : "-"
+    p.id, p.nombre, p.cantidad_stock, `$${Number(p.precio).toLocaleString("es-MX")}`,
+    p.costo ? `$${Number(p.costo).toLocaleString("es-MX")}` : "-",
+    p.costo ? `$${Number(p.precio - p.costo).toLocaleString("es-MX")}` : "-"
   ]);
   drawTable(doc, headers, rows, doc.y);
   doc.end();
-  return doc;
+  return collectStream(doc);
 }
 
 export function generateVentasPDF(ventas) {
@@ -42,10 +50,10 @@ export function generateVentasPDF(ventas) {
   doc.moveDown(1.5);
   const headers = ["ID", "Producto", "Cant.", "P/U", "Total", "Fecha"];
   const rows = ventas.map(v => [
-    v.id, v.producto, v.cantidad, `$${v.precio_unitario}`,
-    `$${v.total}`, v.fecha?.split(" ")[0]
+    v.id, v.producto, v.cantidad, `$${Number(v.precio_unitario).toLocaleString("es-MX")}`,
+    `$${Number(v.total).toLocaleString("es-MX")}`, v.fecha?.split(" ")[0]
   ]);
   drawTable(doc, headers, rows, doc.y);
   doc.end();
-  return doc;
+  return collectStream(doc);
 }
