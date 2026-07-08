@@ -649,7 +649,7 @@ function SaleForm({ token, products, onDone }) {
         ))}
       </select>
       {selectedProduct && (
-        <div className="stock-info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="stock-info">
           <span><strong>Stock:</strong> {selectedProduct.cantidad_stock} uds</span>
           <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
         </div>
@@ -664,12 +664,12 @@ function SaleForm({ token, products, onDone }) {
         </div>
       )}
       {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
-        <div className="stock-low-banner">
+        <div className="sale-alert">
           ⚠️ Este producto se vende por debajo de su costo (${selectedProduct.costo.toLocaleString()})
         </div>
       )}
       {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
-        <div className="stock-low-banner">
+        <div className="sale-alert">
           ⚠️ Margen bajo: {(100 * (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio).toFixed(1)}% de ganancia
         </div>
       )}
@@ -683,26 +683,26 @@ function Report({ report }) {
     <div className="report">
       <h3>Top del Dia</h3>
       {report.ventasDia.top.length === 0 ? <p className="muted">Sin ventas hoy</p> : report.ventasDia.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos dia:</span><strong>${report.ventasDia.ingresos}</strong></div>
+      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos dia:</span><strong>${report.ventasDia.ingresos}</strong></div>
 
-      <h3 style={{ marginTop: "16px" }}>Productos vendidos hoy</h3>
+      <h3>Productos vendidos hoy</h3>
       {report.ventasDiaDetalle.length === 0 ? <p className="muted">Sin ventas hoy</p> : report.ventasDiaDetalle.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
 
-      <h3 style={{ marginTop: "16px" }}>Top de la Semana</h3>
+      <h3>Top de la Semana</h3>
       {report.ventasSemana.top.length === 0 ? <p className="muted">Sin ventas esta semana</p> : report.ventasSemana.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos semana:</span><strong>${report.ventasSemana.ingresos}</strong></div>
+      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos semana:</span><strong>${report.ventasSemana.ingresos}</strong></div>
 
-      <h3 style={{ marginTop: "16px" }}>Top del Mes</h3>
+      <h3>Top del Mes</h3>
       {report.ventasMes.top.length === 0 ? <p className="muted">Sin ventas este mes</p> : report.ventasMes.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid #edf1f2", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${report.ventasMes.ingresos}</strong></div>
+      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${report.ventasMes.ingresos}</strong></div>
 
-      <h3 style={{ marginTop: "16px" }}>Menos vendidos (semana)</h3>
+      <h3>Menos vendidos (semana)</h3>
       {(report.menosVendidosSemana || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosSemana.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
-      <h3 style={{ marginTop: "16px" }}>Menos vendidos (mes)</h3>
+      <h3>Menos vendidos (mes)</h3>
       {(report.menosVendidosMes || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosMes.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
-      <h3 style={{ marginTop: "16px" }}>Productos con bajo stock</h3>
+      <h3>Productos con bajo stock</h3>
       {(report.agotados || []).map((p) => <div className="report-line" key={p.id}><span className="error">{p.nombre} (Agotado)</span><strong>{p.cantidad_stock} uds</strong></div>)}
       {(report.bajoStock || []).map((p) => <div className="report-line" key={p.id}><span className="warning" style={{ padding: "0", border: "0", background: "transparent" }}>{p.nombre}</span><strong>{p.cantidad_stock} uds</strong></div>)}
     </div>
@@ -818,7 +818,7 @@ function ImportPreview({ preview, onConfirm }) {
   const total = preview.nuevos.length + preview.actualizados.length + preview.errores.length + preview.unchanged;
   return (
     <div className="preview">
-      <div style={{ padding: "12px", background: "#f8fafc", borderRadius: "8px", marginBottom: "16px", display: "flex", gap: "16px" }}>
+      <div className="preview-stats">
         <span><strong>Total procesado:</strong> {total} filas</span>
         <span><strong>Sin cambios:</strong> {preview.unchanged}</span>
       </div>
@@ -875,7 +875,7 @@ function UsersPanel({ token }) {
         <select value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
         <button>Crear</button>
       </form>
-      <div className="table">{users.map((user) => <div className="row" key={user.id}><div><strong>{user.usuario}</strong><span>{user.rol}</span></div><span>{user.activo ? "Activo" : "Inactivo"}</span><button className="danger" onClick={() => deactivate(user.id)}>Desactivar</button></div>)}</div>
+      <div className="table">{users.map((user) => <div className="row" key={user.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px auto", alignItems: "center" }}><div><strong>{user.usuario}</strong><span className="muted">{user.rol}</span></div><span>{user.activo ? "Activo" : "Inactivo"}</span><button className="danger" onClick={() => deactivate(user.id)}>Desactivar</button></div>)}</div>
     </div>
   );
 }
@@ -946,7 +946,7 @@ function ImportLogPanel({ token }) {
         <input placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={load}>Filtrar</button>
       </div>
-      <div className="table">{logs.map((log) => <div className="row" key={log.id}><div><strong>{log.producto_nombre}</strong><span>{log.archivo_origen} - {log.usuario_admin}</span></div><span>{log.tipo_cambio}</span><span>{log.fecha_hora}</span></div>)}</div>
+      <div className="table">{logs.map((log) => <div className="row" key={log.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 160px", alignItems: "center" }}><div><strong>{log.producto_nombre}</strong><span className="muted">{log.archivo_origen} - {log.usuario_admin}</span></div><span>{log.tipo_cambio}</span><span className="muted">{log.fecha_hora}</span></div>)}</div>
     </div>
   );
 }
@@ -1052,53 +1052,48 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
 
   return (
     <div className="transactions-list">
-      <div className="filters" style={{ margin: "20px 0", background: "#f8fafc", padding: "12px", borderRadius: "8px" }}>
+      <div className="transactions-filters">
         <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
         <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
         <input placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={() => load(false)}>Filtrar</button>
       </div>
 
-      <div className="tipo-tabs" style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+      <div className="tipo-tabs">
         {TIPOS.map(t => (
           <button
             key={t.value}
             className={`tipo-tab ${tipoFilter === t.value ? "active" : ""}`}
-            style={{
-              background: tipoFilter === t.value ? t.color : "#e8eff0",
-              color: tipoFilter === t.value ? "white" : "#263235",
-              border: 0, borderRadius: "6px", padding: "6px 14px", cursor: "pointer", fontWeight: "bold", fontSize: "0.85rem"
-            }}
             onClick={() => setTipoFilter(t.value)}
           >{t.label}</button>
         ))}
       </div>
 
       <div className="timeline">
-        {Object.keys(grouped).sort((a, b) => b - a).map(year => (
+                  {Object.keys(grouped).sort((a, b) => b - a).map(year => (
           <div key={year} className="tl-year">
-            <h3 style={{ fontSize: "1.2rem", margin: "16px 0 8px", color: "#0f172a" }}>{year}</h3>
+            <h3>{year}</h3>
             {sortMonths(grouped[year]).map(month => (
-              <div key={month} className="tl-month" style={{ paddingLeft: "12px" }}>
-                <h4 style={{ textTransform: "capitalize", color: "#334155", margin: "12px 0 8px" }}>{month}</h4>
+              <div key={month} className="tl-month">
+                <h4>{month}</h4>
                 {sortDays(grouped[year][month]).map(dateKey => (
-                  <div key={dateKey} className="tl-day" style={{ paddingLeft: "12px" }}>
-                    <strong style={{ display: "block", marginBottom: "8px", color: "#64748b", fontSize: "0.9rem" }}>{dateKey}</strong>
-                    <div className="table" style={{ marginBottom: "16px" }}>
+                  <div key={dateKey} className="tl-day">
+                    <strong>{dateKey}</strong>
+                    <div className="table">
                       {grouped[year][month][dateKey].map(t => (
-                        <div className="row" key={t.id} style={{ display: "grid", gridTemplateColumns: "70px 80px 1fr 90px auto", background: t.revertida ? "#f1f5f9" : "#fff", padding: "8px 12px", opacity: t.revertida ? 0.7 : 1 }}>
-                          <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>{t.fecha.split(" ")[1]}</span>
-                          <span className={`badge ${t.tipo}`} style={t.revertida ? { textDecoration: "line-through" } : {}}>{t.tipo}</span>
+                        <div className="row transaction-row-content" key={t.id} data-revertida={t.revertida}>
+                          <span className="muted">{t.fecha.split(" ")[1]}</span>
+                          <span className={`badge ${t.tipo}`}>{t.tipo}</span>
                           <div>
-                            <strong style={t.revertida ? { textDecoration: "line-through", color: "#94a3b8" } : {}}>{t.producto_nombre}</strong>
-                            <span style={{ fontSize: "0.85rem", color: "#64748b", display: "block" }}>
+                            <strong>{t.producto_nombre}</strong>
+                            <span className="trash-meta">
                               Por: {t.usuario_nombre} {t.nota ? `- ${t.nota}` : ""}
-                              {t.revertida && <span style={{ color: "#991b1b", fontWeight: "bold" }}> (REVERTIDA{t.revertida_por_usuario ? ` por ${t.revertida_por_usuario}` : ""}{t.motivo_reversion ? `: ${t.motivo_reversion}` : ""})</span>}
+                              {t.revertida && <span className="error"> (REVERTIDA{t.revertida_por_usuario ? ` por ${t.revertida_por_usuario}` : ""}{t.motivo_reversion ? `: ${t.motivo_reversion}` : ""})</span>}
                             </span>
                           </div>
-                          <span className="stock-col" style={{ fontWeight: "bold", textDecoration: t.revertida ? "line-through" : "none" }}>{t.cantidad} uds</span>
+                          <span className="stock-col">{t.cantidad} uds</span>
                           {canRevert && !t.revertida && (
-                            <button className="danger" style={{ width: "auto", padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => onRevert(t)} title="Revertir transaccion">Revertir</button>
+                            <button className="danger revert-btn" onClick={() => onRevert(t)} title="Revertir transaccion">Revertir</button>
                           )}
                         </div>
                       ))}
@@ -1111,7 +1106,7 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
         ))}
         {transactions.length === 0 && <p className="muted">No hay transacciones para mostrar.</p>}
         {hasMore && transactions.length > 0 && (
-          <button className="link-button" onClick={() => load(true)} style={{ width: "100%", padding: "12px", background: "#f1f5f9" }}>Cargar más transacciones</button>
+          <button className="load-more-btn" onClick={() => load(true)}>Cargar más transacciones</button>
         )}
       </div>
     </div>
@@ -1174,17 +1169,15 @@ function TrashPanel({ token }) {
       ) : (
         <div className="table">
           {products.map((p) => (
-            <div className="row" key={p.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px auto", padding: "10px" }}>
+            <div className="row trash-row" key={p.id}>
               <div>
                 <strong>{p.nombre}</strong>
-                <span style={{ fontSize: "0.85rem", color: "#64748b", display: "block" }}>
+                <span className="trash-meta">
                   Eliminado por: {p.eliminado_por_usuario || "Desconocido"} - {p.fecha_eliminacion ? new Date(p.fecha_eliminacion).toLocaleString("es-ES") : ""}
                 </span>
               </div>
               <span className="stock-col">{p.cantidad_stock} uds</span>
-              <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.8rem", color: "#92400e" }}>
-                <Clock size={14} />{daysRemaining(p.fecha_eliminacion)}
-              </span>
+              <span className="trash-timer"><Clock size={14} />{daysRemaining(p.fecha_eliminacion)}</span>
               <div className="actions">
                 <button onClick={() => restore(p.id)} title="Restaurar"><RotateCcw size={16} /></button>
               </div>
@@ -1267,7 +1260,7 @@ function Ganancias({ token }) {
 
       {loading ? <p className="muted">Cargando...</p> : data.products.length === 0 ? <p className="muted">Sin datos en este periodo.</p> : (
         <div className="table">
-          <div className="row profit-header">
+          <div className="profit-header">
             <span>Producto</span>
             <span className="stock-col">Costo</span>
             <span className="stock-col">Venta</span>
