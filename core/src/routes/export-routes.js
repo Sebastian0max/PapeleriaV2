@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { getDb } from "../db/connection.js";
+import { generateProductosPDF, generateVentasPDF } from "../services/pdf-service.js";
 
 export async function exportRoutes(app) {
   app.get("/productos", { preHandler: [app.authenticate] }, async (request, reply) => {
@@ -58,5 +59,30 @@ export async function exportRoutes(app) {
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     return reply.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
       .header("Content-Disposition", "attachment; filename=reportes.xlsx").send(buf);
+  });
+
+  app.get("/productos/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
+    const productos = getDb().prepare(`
+      SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.costo
+      FROM productos p WHERE p.eliminado = 0 ORDER BY p.nombre
+    `).all();
+    const doc = generateProductosPDF(productos);
+    const chunks = [];
+    for await (const chunk of doc) chunks.push(chunk);
+    return reply.type("application/pdf")
+      .header("Content-Disposition", "attachment; filename=productos.pdf").send(Buffer.concat(chunks));
+  });
+
+  app.get("/ventas/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
+    const ventas = getDb().prepare(`
+      SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha
+      FROM ventas v JOIN productos p ON p.id = v.producto_id
+      WHERE v.anulada = 0 ORDER BY v.fecha DESC LIMIT 500
+    `).all();
+    const doc = generateVentasPDF(ventas);
+    const chunks = [];
+    for await (const chunk of doc) chunks.push(chunk);
+    return reply.type("application/pdf")
+      .header("Content-Disposition", "attachment; filename=ventas.pdf").send(Buffer.concat(chunks));
   });
 }

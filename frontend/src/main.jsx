@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Boxes,
   Download,
+  FileText,
   ImagePlus,
   LogOut,
   Moon,
@@ -331,9 +332,11 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <button className="icon-button" onClick={toggleExportMenu} title="Exportar datos"><Download size={18} /></button>
             {showExportMenu && (
               <div className="export-menu">
-                <button onClick={() => { downloadExcel(token, "/exportar/productos", "productos.xlsx"); setShowExportMenu(false); }}>Productos (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/ventas", "ventas.xlsx"); setShowExportMenu(false); }}>Ventas (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/reportes", "reportes.xlsx"); setShowExportMenu(false); }}>Reportes (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/productos", "productos.xlsx"); setShowExportMenu(false); }}><FileText size={14} /> Productos (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/productos/pdf", "productos.pdf"); setShowExportMenu(false); }}><FileText size={14} /> Productos (PDF)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/ventas", "ventas.xlsx"); setShowExportMenu(false); }}><FileText size={14} /> Ventas (Excel)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/ventas/pdf", "ventas.pdf"); setShowExportMenu(false); }}><FileText size={14} /> Ventas (PDF)</button>
+                <button onClick={() => { downloadExcel(token, "/exportar/reportes", "reportes.xlsx"); setShowExportMenu(false); }}><FileText size={14} /> Reportes (Excel)</button>
               </div>
             )}
           </div>
@@ -475,7 +478,7 @@ function ProductForm({ token, onDone }) {
       <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Nombre de producto</span><input required placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
       <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Unidades en stock</span><input required type="number" min="0" placeholder="Unidades" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
       <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Precio de venta</span><input required type="number" min="0" placeholder="Precio" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
-      <label><span style={{ fontWeight: "normal", fontSize: "12px", color: "var(--text-secondary)" }}>Costo (opcional)</span><input type="number" min="0" placeholder="Costo" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
+      <label><span>Costo por unidad</span><input required={false} type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
       <label className="file-button" title="Imagen" style={{ alignSelf: "end" }}><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
       <button title="Agregar producto" style={{ alignSelf: "end" }}><PackagePlus size={18} /></button>
     </form>
@@ -714,6 +717,7 @@ function Config({ token, can, onImported }) {
         {can("roles:ver") && <button className={section === "roles" ? "active" : ""} onClick={() => setSection("roles")}><Settings size={17} />Roles</button>}
         {can("importacion:ver") && <button className={section === "bitacora" ? "active" : ""} onClick={() => setSection("bitacora")}><Boxes size={17} />Bitacora</button>}
         {can("productos:eliminar") && <button className={section === "papelera" ? "active" : ""} onClick={() => setSection("papelera")}><Trash2 size={17} />Papelera</button>}
+        <button onClick={() => window.open("/manual.html", "_blank")}><FileText size={17} />Manual</button>
       </aside>
       {section === "importacion" && <ImportPanel token={token} onImported={onImported} />}
       {section === "usuarios" && <UsersPanel token={token} />}
