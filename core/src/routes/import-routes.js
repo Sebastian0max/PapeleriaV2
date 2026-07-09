@@ -11,14 +11,14 @@ export async function importRoutes(app) {
   app.post("/preview", { preHandler: [app.requireAdminPermission("importacion", "crear")] }, async (request) => {
     const file = await request.file();
     const parsed = await parseImportFile(file);
-    return { preview: buildImportPreview({ ...parsed, adminId: request.user.id }) };
+    return { preview: buildImportPreview({ ...parsed, adminId: request.user.id, client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/confirmar", { preHandler: [app.requireAdminPermission("importacion", "crear")] }, async (request) => {
-    return { result: applyImportPreview(request.body.token, request.user.id) };
+    return { result: await applyImportPreview(request.body.token, request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.get("/bitacora", { preHandler: [app.requireAdminPermission("importacion", "ver")] }, async (request) => {
-    return { logs: listImportLogs(request.query) };
+    return { logs: await listImportLogs({ ...request.query, client: request.client, tenantId: request.tenantId }) };
   });
 }

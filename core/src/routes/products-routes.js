@@ -22,55 +22,41 @@ const movementSchema = z.object({
 
 export async function productRoutes(app) {
   app.get("/", { preHandler: [app.requirePermission("productos", "ver")] }, async (request) => {
-    return { products: listProducts({ search: request.query.search || "" }) };
+    return { products: await listProducts({ search: request.query.search || "", client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/", { preHandler: [app.requireAdminPermission("productos", "crear")] }, async (request) => {
-    return { product: createProduct(productSchema.parse(request.body)) };
+    return { product: await createProduct(productSchema.parse(request.body), { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.put("/:id", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
-    console.log(`[API] PUT /productos/${request.params.id}`, request.body);
-    const result = updateProduct(Number(request.params.id), productSchema.partial().parse(request.body), request.user.id);
-    console.log(`[API] PUT result for ${request.params.id}:`, result);
-    return { product: result };
+    return { product: await updateProduct(Number(request.params.id), productSchema.partial().parse(request.body), request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.delete("/:id", { preHandler: [app.requireAdminPermission("productos", "eliminar")] }, async (request) => {
-    console.log(`[API] DELETE /productos/${request.params.id} by user ${request.user.id}`);
-    const result = deleteProduct(Number(request.params.id), request.user.id);
-    console.log(`[API] DELETE result for ${request.params.id}:`, result);
+    const result = await deleteProduct(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
     return { ...result, message: "Producto movido a la papelera." };
   });
 
-  // Trash endpoints (admin only)
-  app.get("/papelera", { preHandler: [app.requireAdminPermission("productos", "ver")] }, async () => {
-    return { products: listTrashProducts() };
+  app.get("/papelera", { preHandler: [app.requireAdminPermission("productos", "ver")] }, async (request) => {
+    return { products: await listTrashProducts({ client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/:id/restaurar", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
-    return restoreProduct(Number(request.params.id), request.user.id);
+    return await restoreProduct(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
   });
 
   app.post("/purgar", { preHandler: [app.requireAdminPermission("productos", "eliminar")] }, async (request) => {
-    return purgeOldTrash(7);
+    return await purgeOldTrash(7, { client: request.client, tenantId: request.tenantId });
   });
 
   app.post("/:id/imagen", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
     const file = await request.file();
-    return { product: await updateProductImage(Number(request.params.id), file) };
+    return { product: await updateProductImage(Number(request.params.id), file, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/:id/movimientos", { preHandler: [app.requireAdminPermission("stock", "crear")] }, async (request) => {
     const input = movementSchema.parse(request.body);
-    return {
-      product: updateStock({
-        productoId: Number(request.params.id),
-        tipo: input.tipo,
-        cantidad: input.cantidad,
-        usuarioId: request.user.id,
-        nota: input.nota
-      })
-    };
+    return { product: await updateStock({ productoId: Number(request.params.id), tipo: input.tipo, cantidad: input.cantidad, usuarioId: request.user.id, nota: input.nota, client: request.client, tenantId: request.tenantId }) };
   });
 }

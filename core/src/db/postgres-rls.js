@@ -1,0 +1,54 @@
+export const rlsSQL = `
+CREATE OR REPLACE FUNCTION app.current_tenant_id()
+RETURNS UUID
+LANGUAGE SQL
+STABLE
+AS $$
+  SELECT NULLIF(current_setting('app.tenant_id', TRUE), '')::UUID;
+$$;
+
+ALTER TABLE productos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rol_permisos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ventas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ventas_detalle ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compras ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compras_detalle ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE backups ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE productos FORCE ROW LEVEL SECURITY;
+ALTER TABLE clientes FORCE ROW LEVEL SECURITY;
+ALTER TABLE users FORCE ROW LEVEL SECURITY;
+ALTER TABLE roles FORCE ROW LEVEL SECURITY;
+ALTER TABLE rol_permisos FORCE ROW LEVEL SECURITY;
+ALTER TABLE ventas FORCE ROW LEVEL SECURITY;
+ALTER TABLE ventas_detalle FORCE ROW LEVEL SECURITY;
+ALTER TABLE compras FORCE ROW LEVEL SECURITY;
+ALTER TABLE compras_detalle FORCE ROW LEVEL SECURITY;
+ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
+ALTER TABLE transactions FORCE ROW LEVEL SECURITY;
+ALTER TABLE backups FORCE ROW LEVEL SECURITY;
+
+DO $$
+DECLARE
+  tbl TEXT;
+  tables TEXT[] := ARRAY['productos','clientes','users','roles','rol_permisos','ventas','ventas_detalle','compras','compras_detalle','audit_log','transactions','backups'];
+BEGIN
+  FOREACH tbl IN ARRAY tables
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', tbl);
+    EXECUTE format(
+      'CREATE POLICY tenant_isolation ON %I
+       FOR ALL
+       USING (tenant_id = app.current_tenant_id())
+       WITH CHECK (tenant_id = app.current_tenant_id())',
+      tbl
+    );
+  END LOOP;
+END;
+$$;
+`;

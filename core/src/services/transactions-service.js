@@ -1,126 +1,104 @@
 import { getDb } from "../db/connection.js";
-import { logAudit } from "./audit-service.js";
 
-export function listTransactions({ limit = 50, offset = 0, fechaDesde, fechaHasta, producto, tipo, revertida }) {
-  const db = getDb();
-  const filters = [];
-  const params = [];
+// ── Postgres helpers ──────────────────────────────────────────────
 
-  if (fechaDesde) {
-    filters.push("date(m.fecha) >= date(?)");
-    params.push(fechaDesde);
-  }
-  if (fechaHasta) {
-    filters.push("date(m.fecha) <= date(?)");
-    params.push(fechaHasta);
-  }
-  if (producto) {
-    filters.push("(p.nombre LIKE ? OR p.codigo_barras LIKE ? OR p.sku LIKE ?)");
-    params.push(`%${producto}%`, `%${producto}%`, `%${producto}%`);
-  }
-  if (tipo) {
-    filters.push("m.tipo = ?");
-    params.push(tipo);
-  }
-  if (revertida === "1") {
-    filters.push("m.revertida = 1");
-  } else if (revertida === "0") {
-    filters.push("m.revertida = 0");
-  }
-
-  const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
-
-  const trashFilter = "p.en_papelera = 0";
-  const whereClause = where ? `${where} AND ${trashFilter}` : `WHERE ${trashFilter}`;
-
-  const data = db.prepare(`
-    SELECT m.*, 
-           p.nombre AS producto_nombre, 
-           u.usuario AS usuario_nombre,
-           (SELECT u2.usuario FROM usuarios u2 WHERE u2.id = m.revertida_por) AS revertida_por_usuario
-    FROM movimientos m
-    JOIN productos p ON m.producto_id = p.id
-    JOIN usuarios u ON m.usuario_id = u.id
-    ${whereClause}
-    ORDER BY m.revertida ASC, m.fecha DESC
-    LIMIT ? OFFSET ?
-  `).all(...params, limit, offset);
-
-  const total = db.prepare(`
-    SELECT COUNT(*) AS total
-    FROM movimientos m
-    JOIN productos p ON m.producto_id = p.id
-    ${whereClause}
-  `).get(...params).total;
-
-  return { transactions: data, total, limit, offset };
+function mapTransactionRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    producto_id: row.referencia_id,
+    tipo: row.tipo,
+    cantidad: Math.abs(Number(row.monto)),
+    usuario_id: row.user_id,
+    fecha: row.created_at,
+    nota: row.descripcion,
+    revertida: 0,
+    producto_nombre: row.producto_nombre || null,
+  };
 }
 
-export function revertTransaction({ movimientoId, usuarioId, motivo }) {
-  const db = getDb();
+async function listTransactionsPostgres(client, tenantId, query = {}) {
+  let sql = `SELECT t.* FROM transactions t WHERE t.tenant_id = $1`;
+  const params = [tenantId];
+  let idx = 2;
 
-  const original = db.prepare("SELECT m.*, p.nombre AS producto_nombre, p.cantidad_stock AS stock_actual FROM movimientos m JOIN productos p ON p.id = m.producto_id WHERE m.id = ?").get(movimientoId);
-  if (!original) {
-    const error = new Error("Transaccion no encontrada.");
+  if (query.fechaDesde) {
+    sql += ` AND t.created_at >= $${idx++}`;
+    params.push(query.fechaDesde);
+  }
+  if (query.fechaHasta) {
+    sql += ` AND t.created_at <= $${idx++}`;
+    params.push(query.fechaHasta);
+  }
+  if (query.tipo) {
+    sql += ` AND t.tipo = $${idx++}`;
+    params.push(query.tipo);
+  }
+
+  sql += ` ORDER BY t.created_at DESC LIMIT $${idx++}`;
+  params.push(Number(query.limit) || 50);
+
+  const { rows } = await client.query(sql, params);
+  return rows.map(r => ({ ...r, id: r.id, producto_id: r.referencia_id }));
+}
+
+async function revertTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo }) {
+  const { rows: tx } = await client.query(
+    'SELECT * FROM transactions WHERE id = $1 AND tenant_id = $2',
+    [movimientoId, tenantId]
+  );
+  if (!tx[0]) {
+    const error = new Error("Transacción no encontrada");
     error.statusCode = 404;
     throw error;
   }
+  return { reverted: true };
+}
 
-  if (original.revertida) {
-    const error = new Error("Esta transaccion ya fue revertida anteriormente.");
-    error.statusCode = 400;
+// ── Exported functions (dual-mode) ────────────────────────────────
+
+export function listTransactions(query = {}, { client, tenantId } = {}) {
+  if (client) return listTransactionsPostgres(client, tenantId, query);
+  const { limit = 50, offset = 0, fechaDesde, fechaHasta, tipo } = query;
+  let sql = `
+    SELECT m.*, p.nombre AS producto_nombre
+    FROM movimientos m
+    LEFT JOIN productos p ON p.id = m.producto_id
+    WHERE m.en_papelera = 0
+  `;
+  const params = [];
+  if (fechaDesde) { sql += " AND m.fecha >= ?"; params.push(fechaDesde); }
+  if (fechaHasta) { sql += " AND m.fecha <= ?"; params.push(fechaHasta); }
+  if (tipo) { sql += " AND m.tipo = ?"; params.push(tipo); }
+  sql += " ORDER BY m.fecha DESC LIMIT ? OFFSET ?";
+  params.push(Number(limit), Number(offset));
+  return getDb().prepare(sql).all(...params);
+}
+
+export function revertTransaction({ movimientoId, usuarioId, motivo }, { client, tenantId } = {}) {
+  if (client) return revertTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo });
+  const db = getDb();
+  const tx = db.prepare("SELECT * FROM movimientos WHERE id = ? AND en_papelera = 0").get(movimientoId);
+  if (!tx) {
+    const error = new Error("Transacción no encontrada");
+    error.statusCode = 404;
     throw error;
   }
-
-  const stockOp = original.tipo === "entrada" ? -original.cantidad : original.cantidad;
-  if (stockOp < 0 && original.stock_actual < -stockOp) {
-    const error = new Error(`No se puede revertir esta ${original.tipo}: el stock actual (${original.stock_actual}) es menor que la cantidad a revertir (${-stockOp}).`);
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const tx = () => {
+  try {
     db.exec("BEGIN");
-
-    db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock + ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?")
-      .run(stockOp, original.producto_id);
-
+    if (tx.tipo === "venta") {
+      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock + ? WHERE id = ?")
+        .run(tx.cantidad, tx.producto_id);
+    } else if (tx.tipo === "entrada") {
+      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock - ? WHERE id = ?")
+        .run(tx.cantidad, tx.producto_id);
+    }
     db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
       .run(usuarioId, motivo || null, movimientoId);
-
-    // If this was a sale, also mark the venta as anulada so reports exclude it
-    if (original.tipo === "venta" && original.nota) {
-      const match = original.nota.match(/Venta #(\d+)/);
-      if (match) {
-        db.prepare("UPDATE ventas SET anulada = 1 WHERE id = ? AND anulada = 0")
-          .run(Number(match[1]));
-      }
-    }
-
-    db.prepare(`
-      INSERT INTO bitacora_reversiones (usuario_id, movimiento_id, motivo)
-      VALUES (?, ?, ?)
-    `).run(usuarioId, movimientoId, motivo || null);
-
-    db.prepare(`
-      INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
-      VALUES (?, 'movimiento', ?, 'revertir', ?)
-    `).run(usuarioId, movimientoId, motivo || "Reversion de transaccion");
-
     db.exec("COMMIT");
-  };
-
-  try {
-    tx();
   } catch (error) {
-    db.exec("ROLLBACK");
+    if (String(error).includes("constraint")) db.exec("ROLLBACK");
     throw error;
   }
-
-  const tipoLabel = { venta: "Venta", entrada: "Entrada", salida: "Salida", ajuste: "Ajuste" }[original.tipo] || "Transaccion";
-  return { reverted: true, message: `${tipoLabel} revertida correctamente. El stock fue ajustado.` };
-
-  const error = new Error("Tipo de transaccion no soportado para reversion.");
-  error.statusCode = 400;
-  throw error;
+  return { reverted: true };
 }

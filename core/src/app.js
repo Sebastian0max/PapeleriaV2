@@ -17,18 +17,30 @@ import { userRoutes } from "./routes/users-routes.js";
 import { getUserWithPermissions, hasPermission } from "./services/permissions-service.js";
 import { initSentry } from "./services/sentry.js";
 
+const isPostgres = !!process.env.SUPABASE_DATABASE_URL;
+
+function registerRoutes(instance) {
+  instance.register(authRoutes, { prefix: "/auth" });
+  instance.register(exportRoutes, { prefix: "/exportar" });
+  instance.register(productRoutes, { prefix: "/productos" });
+  instance.register(salesRoutes, { prefix: "/ventas" });
+  instance.register(transactionsRoutes, { prefix: "/transacciones" });
+  instance.register(reportsRoutes, { prefix: "/reportes" });
+  instance.register(userRoutes, { prefix: "/usuarios" });
+  instance.register(roleRoutes, { prefix: "/roles" });
+  instance.register(importRoutes, { prefix: "/importaciones" });
+}
+
 export function buildApp() {
   const app = Fastify({ logger: true });
 
-  app.register(cors, { 
+  app.register(cors, {
     origin: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
   });
   app.register(jwt, { secret: config.jwtSecret });
   app.register(multipart, {
-    limits: {
-      fileSize: 2 * 1024 * 1024
-    }
+    limits: { fileSize: 2 * 1024 * 1024 }
   });
 
   app.decorate("authenticate", async (request) => {
@@ -37,7 +49,7 @@ export function buildApp() {
 
   app.decorate("requirePermission", (modulo, accion) => async (request) => {
     await request.jwtVerify();
-    if (!hasPermission(request.user.id, modulo, accion)) {
+    if (!await hasPermission(request.user.id, modulo, accion, { client: request.client, tenantId: request.tenantId })) {
       const error = new Error("No tienes permiso para realizar esta accion");
       error.statusCode = 403;
       throw error;
@@ -46,8 +58,8 @@ export function buildApp() {
 
   app.decorate("requireAdminPermission", (modulo, accion) => async (request) => {
     await request.jwtVerify();
-    const dbUser = getUserWithPermissions(request.user.id);
-    if (dbUser?.rol !== "admin" || !hasPermission(request.user.id, modulo, accion)) {
+    const dbUser = await getUserWithPermissions(request.user.id, { client: request.client, tenantId: request.tenantId });
+    if (dbUser?.rol !== "admin" || !await hasPermission(request.user.id, modulo, accion, { client: request.client, tenantId: request.tenantId })) {
       const error = new Error("Esta funcion solo esta disponible para admin");
       error.statusCode = 403;
       throw error;
@@ -63,15 +75,18 @@ export function buildApp() {
     const type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
     return reply.type(type).send(fs.createReadStream(fullPath));
   });
-  app.register(authRoutes, { prefix: "/auth" });
-  app.register(exportRoutes, { prefix: "/exportar" });
-  app.register(productRoutes, { prefix: "/productos" });
-  app.register(salesRoutes, { prefix: "/ventas" });
-  app.register(transactionsRoutes, { prefix: "/transacciones" });
-  app.register(reportsRoutes, { prefix: "/reportes" });
-  app.register(userRoutes, { prefix: "/usuarios" });
-  app.register(roleRoutes, { prefix: "/roles" });
-  app.register(importRoutes, { prefix: "/importaciones" });
+
+  if (isPostgres) {
+    app.register(async function pgScope(instance) {
+      const { tenantResolver } = await import("./middleware/tenant-resolver.js");
+      const { withDb } = await import("./middleware/with-db.js");
+      instance.addHook("onRequest", tenantResolver);
+      instance.addHook("onRequest", withDb);
+      registerRoutes(instance);
+    });
+  } else {
+    registerRoutes(app);
+  }
 
   initSentry(app);
 

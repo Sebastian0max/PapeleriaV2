@@ -7,18 +7,16 @@ const saleSchema = z.object({
 });
 
 export async function salesRoutes(app) {
-  app.get("/", { preHandler: [app.requirePermission("ventas", "ver")] }, async () => {
-    return { sales: listSales() };
+  app.get("/", { preHandler: [app.requirePermission("ventas", "ver")] }, async (request) => {
+    return { sales: await listSales({ client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/", { preHandler: [app.requirePermission("ventas", "crear")] }, async (request) => {
     const input = saleSchema.parse(request.body);
-    return { sale: createSale({ ...input, usuarioId: request.user.id }) };
+    return { sale: await createSale({ ...input, usuarioId: request.user.id, client: request.client, tenantId: request.tenantId }) };
   });
 
   app.delete("/:id", { preHandler: [app.requirePermission("ventas", "eliminar")] }, async (request) => {
-    const result = deleteSale(Number(request.params.id), request.user.id);
-    return result;
+    return await deleteSale(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
   });
-
 }

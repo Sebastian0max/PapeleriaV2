@@ -29,14 +29,15 @@ function collectStream(stream) {
 
 export function generateProductosPDF(productos) {
   const doc = new PDFDocument({ margin: 40 });
-  doc.fontSize(18).font("Helvetica-Bold").text("Inventario - Papelería", { align: "center" });
+  doc.fontSize(18).font("Helvetica-Bold").text("Inventario - Papeleria", { align: "center" });
   doc.fontSize(10).font("Helvetica").text(`Generado: ${new Date().toLocaleDateString("es-MX")}`, { align: "center" });
   doc.moveDown(1.5);
   const headers = ["ID", "Nombre", "Stock", "Precio", "Costo", "Ganancia"];
   const rows = productos.map(p => [
-    p.id, p.nombre, p.cantidad_stock, `$${Number(p.precio).toLocaleString("es-MX")}`,
+    p.id, p.nombre, p.cantidad_stock || p.stock,
+    `$${Number(p.precio || p.precio_venta).toLocaleString("es-MX")}`,
     p.costo ? `$${Number(p.costo).toLocaleString("es-MX")}` : "-",
-    p.costo ? `$${Number(p.precio - p.costo).toLocaleString("es-MX")}` : "-"
+    p.costo ? `$${Number((p.precio || p.precio_venta) - p.costo).toLocaleString("es-MX")}` : "-"
   ]);
   drawTable(doc, headers, rows, doc.y);
   doc.end();
@@ -45,13 +46,15 @@ export function generateProductosPDF(productos) {
 
 export function generateVentasPDF(ventas) {
   const doc = new PDFDocument({ margin: 40 });
-  doc.fontSize(18).font("Helvetica-Bold").text("Ventas - Papelería", { align: "center" });
+  doc.fontSize(18).font("Helvetica-Bold").text("Ventas - Papeleria", { align: "center" });
   doc.fontSize(10).font("Helvetica").text(`Generado: ${new Date().toLocaleDateString("es-MX")}`, { align: "center" });
   doc.moveDown(1.5);
   const headers = ["ID", "Producto", "Cant.", "P/U", "Total", "Fecha"];
   const rows = ventas.map(v => [
-    v.id, v.producto, v.cantidad, `$${Number(v.precio_unitario).toLocaleString("es-MX")}`,
-    `$${Number(v.total).toLocaleString("es-MX")}`, v.fecha?.split(" ")[0]
+    v.id, v.producto, v.cantidad,
+    `$${Number(v.precio_unitario).toLocaleString("es-MX")}`,
+    `$${Number(v.total).toLocaleString("es-MX")}`,
+    (v.fecha || v.created_at)?.split(" ")[0]
   ]);
   drawTable(doc, headers, rows, doc.y);
   doc.end();

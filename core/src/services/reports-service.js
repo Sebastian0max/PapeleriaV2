@@ -1,123 +1,73 @@
 import { getDb } from "../db/connection.js";
 
-export function getProfitEvolution() {
-  const db = getDb();
-  const rows = db.prepare(`
-    SELECT date(v.fecha) AS dia,
-      COALESCE(SUM((p.precio - p.costo) * v.cantidad), 0) AS ganancia,
-      COALESCE(SUM(v.total), 0) AS ingresos
-    FROM ventas v
-    JOIN productos p ON p.id = v.producto_id
-    WHERE v.anulada = 0 AND date(v.fecha) >= date('now', '-30 days', 'localtime')
-    GROUP BY date(v.fecha)
-    ORDER BY dia ASC
-  `).all();
-  const map = {};
-  for (const r of rows) map[r.dia] = r;
-  const days = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().split("T")[0];
-    const existing = map[key];
-    days.push({
-      dia: key,
-      ganancia: existing ? existing.ganancia : 0,
-      ingresos: existing ? existing.ingresos : 0
-    });
-  }
-  return days;
+// ── Postgres helpers ──────────────────────────────────────────────
+
+async function getStockReportPostgres(client, tenantId) {
+  const { rows } = await client.query(
+    `SELECT COUNT(*)::INTEGER AS total_productos,
+            COALESCE(SUM(stock), 0) AS stock_total,
+            COUNT(*) FILTER (WHERE stock <= stock_minimo AND activo = TRUE)::INTEGER AS productos_bajos
+     FROM productos WHERE tenant_id = $1 AND activo = TRUE`,
+    [tenantId]
+  );
+  return rows[0];
 }
 
-export function getProfitReport(periodo) {
-  const db = getDb();
-  let periodFilter;
-  if (periodo === "dia") {
-    periodFilter = "date(v.fecha) = date('now', 'localtime')";
-  } else if (periodo === "semana") {
-    periodFilter = "strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')";
-  } else {
-    periodFilter = "strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')";
-  }
-  const products = db.prepare(`
-    SELECT p.id, p.nombre, p.costo, p.precio,
-      (p.precio - p.costo) AS ganancia_unitaria,
-      CASE WHEN p.precio > 0 THEN ROUND(CAST((p.precio - p.costo) AS REAL) * 100.0 / p.precio, 1) ELSE 0 END AS margen,
-      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN v.cantidad ELSE 0 END), 0) AS unidades_vendidas,
-      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN (p.precio - p.costo) * v.cantidad ELSE 0 END), 0) AS ganancia_total
-    FROM productos p
-    LEFT JOIN ventas v ON v.producto_id = p.id
-    WHERE p.activo = 1 AND p.en_papelera = 0
-    GROUP BY p.id
-    ORDER BY ganancia_total DESC
-  `).all();
-  const totals = db.prepare(`
-    SELECT
-      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN (p.precio - p.costo) * v.cantidad ELSE 0 END), 0) AS ganancia_total,
-      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN v.total ELSE 0 END), 0) AS ingresos
-    FROM productos p
-    LEFT JOIN ventas v ON v.producto_id = p.id
-    WHERE p.activo = 1 AND p.en_papelera = 0
-  `).get();
-  return { products, totalGanancia: totals.ganancia_total, totalIngresos: totals.ingresos };
+async function getProfitReportPostgres(client, tenantId, periodo) {
+  const days = periodo === "dia" ? 1 : periodo === "semana" ? 7 : 30;
+  const { rows } = await client.query(
+    `SELECT COALESCE(SUM(vd.subtotal - (vd.cantidad * p.precio_compra)), 0) AS ganancia_total
+     FROM ventas_detalle vd
+     JOIN productos p ON p.id = vd.producto_id
+     JOIN ventas v ON v.id = vd.venta_id
+     WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - ($2 || ' days')::INTERVAL AND v.estatus = 'completada'`,
+    [tenantId, days]
+  );
+  return rows[0];
 }
 
-export function getStockReport() {
+async function getProfitEvolutionPostgres(client, tenantId) {
+  const { rows } = await client.query(
+    `SELECT DATE(v.created_at) AS dia, COALESCE(SUM(vd.subtotal - (vd.cantidad * p.precio_compra)), 0) AS ganancia
+     FROM ventas_detalle vd
+     JOIN productos p ON p.id = vd.producto_id
+     JOIN ventas v ON v.id = vd.venta_id
+     WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - INTERVAL '30 days' AND v.estatus = 'completada'
+     GROUP BY DATE(v.created_at) ORDER BY dia`,
+    [tenantId]
+  );
+  return rows;
+}
+
+// ── Exported functions (dual-mode) ────────────────────────────────
+
+export function getStockReport({ client, tenantId } = {}) {
+  if (client) return getStockReportPostgres(client, tenantId);
   const db = getDb();
   return {
-    agotados: db.prepare("SELECT * FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock = 0 ORDER BY nombre").all(),
-    bajoStock: db.prepare("SELECT * FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock <= stock_minimo AND cantidad_stock > 0 ORDER BY cantidad_stock ASC").all(),
-    ventasDia: salesPeriod("date(v.fecha) = date('now', 'localtime')"),
-    ventasSemana: salesPeriod("strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')"),
-    ventasMes: salesPeriod("strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')"),
-    ventasDiaDetalle: db.prepare(`
-      SELECT p.id, p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total
-      FROM ventas v
-      JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 AND date(v.fecha) = date('now', 'localtime')
-      GROUP BY p.id
-      ORDER BY cantidad DESC
-    `).all(),
-    menosVendidosSemana: db.prepare(`
-      SELECT p.id, p.nombre, p.cantidad_stock, COALESCE(SUM(v.cantidad), 0) AS vendidos
-      FROM productos p
-      LEFT JOIN ventas v ON v.producto_id = p.id AND v.anulada = 0
-        AND strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime')
-        AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')
-      WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
-      GROUP BY p.id
-      ORDER BY vendidos ASC, p.nombre ASC
-      LIMIT 10
-    `).all(),
-    menosVendidosMes: db.prepare(`
-      SELECT p.id, p.nombre, p.cantidad_stock, COALESCE(SUM(v.cantidad), 0) AS vendidos
-      FROM productos p
-      LEFT JOIN ventas v ON v.producto_id = p.id AND v.anulada = 0
-        AND strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')
-      WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
-      GROUP BY p.id
-      ORDER BY vendidos ASC, p.nombre ASC
-      LIMIT 10
-    `).all()
+    total_productos: db.prepare("SELECT COUNT(*) AS c FROM productos WHERE activo = 1 AND en_papelera = 0").get().c,
+    stock_total: db.prepare("SELECT COALESCE(SUM(cantidad_stock), 0) AS s FROM productos WHERE activo = 1 AND en_papelera = 0").get().s,
+    productos_bajos: db.prepare("SELECT COUNT(*) AS c FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock <= stock_minimo").get().c,
   };
+}
 
-  function salesPeriod(whereClause) {
-    const top = db.prepare(`
-      SELECT p.id, p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total
-      FROM ventas v
-      JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 AND ${whereClause}
-      GROUP BY p.id
-      ORDER BY cantidad DESC
-      LIMIT 3
-    `).all();
+export function getProfitReport(periodo = "mes", { client, tenantId } = {}) {
+  if (client) return getProfitReportPostgres(client, tenantId, periodo);
+  const rango = periodo === "dia" ? 1 : periodo === "semana" ? 7 : 30;
+  const { rows } = getDb().prepare(`
+    SELECT COALESCE(SUM((v.precio_unitario - p.costo) * v.cantidad), 0) AS ganancia_total
+    FROM ventas v JOIN productos p ON p.id = v.producto_id
+    WHERE v.anulada = 0 AND julianday('now') - julianday(v.fecha) <= ?
+  `).all(rango);
+  return rows[0] || { ganancia_total: 0 };
+}
 
-    const stats = db.prepare(`
-      SELECT COALESCE(SUM(total), 0) AS ingresos
-      FROM ventas v
-      WHERE v.anulada = 0 AND ${whereClause}
-    `).get();
-
-    return { top, ingresos: stats.ingresos };
-  }
+export function getProfitEvolution({ client, tenantId } = {}) {
+  if (client) return getProfitEvolutionPostgres(client, tenantId);
+  return getDb().prepare(`
+    SELECT DATE(v.fecha) AS dia, SUM((v.precio_unitario - p.costo) * v.cantidad) AS ganancia
+    FROM ventas v JOIN productos p ON p.id = v.producto_id
+    WHERE v.anulada = 0 AND julianday('now') - julianday(v.fecha) <= 30
+    GROUP BY DATE(v.fecha) ORDER BY dia
+  `).all();
 }

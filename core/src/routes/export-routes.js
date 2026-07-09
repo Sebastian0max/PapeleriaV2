@@ -2,17 +2,24 @@ import * as XLSX from "xlsx";
 import { getDb } from "../db/connection.js";
 import { generateProductosPDF, generateVentasPDF } from "../services/pdf-service.js";
 
+async function queryAll(client, tenantId, sql, params) {
+  if (client) { const { rows } = await client.query(sql, params); return rows; }
+  return getDb().prepare(sql).all(...params);
+}
+
 export async function exportRoutes(app) {
   app.get("/productos", { preHandler: [app.authenticate] }, async (request, reply) => {
-    const productos = getDb().prepare(`
-      SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.stock_minimo, p.codigo_barras, p.sku, p.categoria
-      FROM productos p WHERE p.en_papelera = 0 ORDER BY p.nombre
-    `).all();
+    const productos = await queryAll(request.client, request.tenantId,
+      request.client
+        ? `SELECT p.id, p.nombre, p.stock AS cantidad_stock, p.precio_venta AS precio, p.stock_minimo, p.codigo AS codigo_barras, p.sku, p.categoria FROM productos p WHERE p.tenant_id = $1 ORDER BY p.nombre`
+        : `SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.stock_minimo, p.codigo_barras, p.sku, p.categoria FROM productos p WHERE p.en_papelera = 0 ORDER BY p.nombre`,
+      request.client ? [request.tenantId] : []
+    );
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(productos.map(p => ({
       ID: p.id, Nombre: p.nombre, Stock: p.cantidad_stock, Precio: p.precio,
-      "Stock Mínimo": p.stock_minimo, "Código Barras": p.codigo_barras,
-      SKU: p.sku, Categoría: p.categoria
+      "Stock Minimo": p.stock_minimo, "Codigo Barras": p.codigo_barras,
+      SKU: p.sku, "Categoria": p.categoria
     })));
     XLSX.utils.book_append_sheet(wb, ws, "Productos");
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
@@ -21,11 +28,12 @@ export async function exportRoutes(app) {
   });
 
   app.get("/ventas", { preHandler: [app.authenticate] }, async (request, reply) => {
-    const ventas = getDb().prepare(`
-      SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha, u.usuario AS vendedor
-      FROM ventas v JOIN productos p ON p.id = v.producto_id LEFT JOIN usuarios u ON u.id = v.usuario_id
-      WHERE v.anulada = 0 ORDER BY v.fecha DESC
-    `).all();
+    const ventas = await queryAll(request.client, request.tenantId,
+      request.client
+        ? `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.created_at AS fecha, u.usuario AS vendedor FROM ventas v JOIN productos p ON p.id = v.producto_id LEFT JOIN usuarios u ON u.id = v.usuario_id WHERE v.anulada = false AND v.tenant_id = $1 ORDER BY v.created_at DESC`
+        : `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha, u.usuario AS vendedor FROM ventas v JOIN productos p ON p.id = v.producto_id LEFT JOIN usuarios u ON u.id = v.usuario_id WHERE v.anulada = 0 ORDER BY v.fecha DESC`,
+      request.client ? [request.tenantId] : []
+    );
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(ventas.map(v => ({
       ID: v.id, Producto: v.producto, Cantidad: v.cantidad,
@@ -39,20 +47,25 @@ export async function exportRoutes(app) {
   });
 
   app.get("/reportes", { preHandler: [app.authenticate] }, async (request, reply) => {
-    const db = getDb();
     const hoy = new Date().toISOString().split("T")[0];
     const semana = new Date(Date.now() - 7 * 864e5).toISOString().split("T")[0];
-    const mes = new Date(Date.now() - 30 * 864e5).toISOString().split("T")[0];
-    const ventasHoy = db.prepare(`
-      SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total
-      FROM ventas v JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 AND date(v.fecha) = ? GROUP BY p.id ORDER BY cantidad DESC
-    `).all(hoy);
-    const ventasSemana = db.prepare(`
-      SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total
-      FROM ventas v JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 AND date(v.fecha) >= ? GROUP BY p.id ORDER BY cantidad DESC
-    `).all(semana);
+    let ventasHoy, ventasSemana;
+    if (request.client) {
+      const { rows: r1 } = await request.client.query(
+        `SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND date(v.created_at) = $1 AND v.tenant_id = $2 GROUP BY p.id ORDER BY cantidad DESC`,
+        [hoy, request.tenantId]
+      );
+      ventasHoy = r1;
+      const { rows: r2 } = await request.client.query(
+        `SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND date(v.created_at) >= $1 AND v.tenant_id = $2 GROUP BY p.id ORDER BY cantidad DESC`,
+        [semana, request.tenantId]
+      );
+      ventasSemana = r2;
+    } else {
+      const db = getDb();
+      ventasHoy = db.prepare(`SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 AND date(v.fecha) = ? GROUP BY p.id ORDER BY cantidad DESC`).all(hoy);
+      ventasSemana = db.prepare(`SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 AND date(v.fecha) >= ? GROUP BY p.id ORDER BY cantidad DESC`).all(semana);
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ventasHoy), "Hoy");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ventasSemana), "Semana");
@@ -62,38 +75,40 @@ export async function exportRoutes(app) {
   });
 
   app.get("/productos/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
-    const productos = getDb().prepare(`
-      SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.costo
-      FROM productos p WHERE p.en_papelera = 0 ORDER BY p.nombre
-    `).all();
+    const productos = await queryAll(request.client, request.tenantId,
+      request.client
+        ? `SELECT p.id, p.nombre, p.stock AS cantidad_stock, p.precio_venta AS precio, p.costo FROM productos p WHERE p.tenant_id = $1 ORDER BY p.nombre`
+        : `SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.costo FROM productos p WHERE p.en_papelera = 0 ORDER BY p.nombre`,
+      request.client ? [request.tenantId] : []
+    );
     const buf = await generateProductosPDF(productos);
     return reply.type("application/pdf")
       .header("Content-Disposition", "attachment; filename=productos.pdf").send(buf);
   });
 
   app.get("/ventas/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
-    const ventas = getDb().prepare(`
-      SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha
-      FROM ventas v JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 ORDER BY v.fecha DESC LIMIT 500
-    `).all();
+    const ventas = await queryAll(request.client, request.tenantId,
+      request.client
+        ? `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.created_at AS fecha FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND v.tenant_id = $1 ORDER BY v.created_at DESC LIMIT 500`
+        : `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 ORDER BY v.fecha DESC LIMIT 500`,
+      request.client ? [request.tenantId] : []
+    );
     const buf = await generateVentasPDF(ventas);
     return reply.type("application/pdf")
       .header("Content-Disposition", "attachment; filename=ventas.pdf").send(buf);
   });
 
   app.get("/ganancias", { preHandler: [app.authenticate] }, async (request, reply) => {
-    const db = getDb();
     const periodo = request.query.periodo || "dia";
     const hoy = new Date().toISOString().split("T")[0];
     const inicio = periodo === "semana" ? new Date(Date.now() - 7 * 864e5).toISOString().split("T")[0]
       : periodo === "mes" ? new Date(Date.now() - 30 * 864e5).toISOString().split("T")[0] : hoy;
-    const ganancias = db.prepare(`
-      SELECT p.nombre, p.costo, v.precio_unitario, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total
-      FROM ventas v JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 AND date(v.fecha) >= ? AND date(v.fecha) <= ?
-      GROUP BY p.id ORDER BY p.nombre
-    `).all(inicio, hoy);
+    const ganancias = await queryAll(request.client, request.tenantId,
+      request.client
+        ? `SELECT p.nombre, p.costo, v.precio_unitario, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND date(v.created_at) >= $1 AND date(v.created_at) <= $2 AND v.tenant_id = $3 GROUP BY p.id ORDER BY p.nombre`
+        : `SELECT p.nombre, p.costo, v.precio_unitario, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 AND date(v.fecha) >= ? AND date(v.fecha) <= ? GROUP BY p.id ORDER BY p.nombre`,
+      request.client ? [inicio, hoy, request.tenantId] : [inicio, hoy]
+    );
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(ganancias.map(g => ({
       Producto: g.nombre, Costo: g.costo, "Precio Venta": g.precio_unitario,

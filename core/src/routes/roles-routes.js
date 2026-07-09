@@ -7,15 +7,15 @@ const roleSchema = z.object({
 });
 
 export async function roleRoutes(app) {
-  app.get("/", { preHandler: [app.requireAdminPermission("roles", "ver")] }, async () => {
-    return { roles: listRoles(), permissions: listPermissions() };
+  app.get("/", { preHandler: [app.requireAdminPermission("roles", "ver")] }, async (request) => {
+    return { roles: await listRoles({ client: request.client, tenantId: request.tenantId }), permissions: await listPermissions({ client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/", { preHandler: [app.requireAdminPermission("roles", "crear")] }, async (request) => {
-    return { role: createRole(roleSchema.parse(request.body)) };
+    return { role: await createRole(roleSchema.parse(request.body), { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.put("/:id", { preHandler: [app.requireAdminPermission("roles", "editar")] }, async (request) => {
-    return { role: updateRole(Number(request.params.id), roleSchema.parse(request.body)) };
+    return { role: await updateRole(Number(request.params.id), roleSchema.parse(request.body), { client: request.client, tenantId: request.tenantId }) };
   });
 }

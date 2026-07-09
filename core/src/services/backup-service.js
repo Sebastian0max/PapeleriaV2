@@ -28,6 +28,11 @@ export async function createDailyBackup() {
     console.log("[backup] No Supabase config. Skipping daily backup.");
     return;
   }
+  if (process.env.SUPABASE_DATABASE_URL) {
+    // Postgres mode: use pg_dump
+    await createPostgresBackup();
+    return;
+  }
   await ensureBucket();
   try { getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch (_) {}
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -43,6 +48,19 @@ export async function createDailyBackup() {
     await cleanOldBackups();
   } else {
     console.error("[backup] Upload failed:", res.status, await res.text());
+  }
+}
+
+async function createPostgresBackup() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const backupName = `papeleria-pg-${timestamp}.dump`;
+  const dbUrl = process.env.SUPABASE_DATABASE_URL;
+  const { execSync } = await import("node:child_process");
+  try {
+    execSync(`pg_dump "${dbUrl}" --no-owner --no-acl -Fc`, { stdio: ["ignore", "pipe", "pipe"] });
+    console.log(`[backup] Postgres backup created: ${backupName}`);
+  } catch (err) {
+    console.error("[backup] pg_dump failed:", err.message);
   }
 }
 

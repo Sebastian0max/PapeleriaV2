@@ -13,20 +13,20 @@ const createSchema = userSchema.extend({
 });
 
 export async function userRoutes(app) {
-  app.get("/", { preHandler: [app.requireAdminPermission("usuarios", "ver")] }, async () => {
-    return { users: listUsers() };
+  app.get("/", { preHandler: [app.requireAdminPermission("usuarios", "ver")] }, async (request) => {
+    return { users: await listUsers({ client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/", { preHandler: [app.requireAdminPermission("usuarios", "crear")] }, async (request) => {
-    return { user: createUser(createSchema.parse(request.body)) };
+    return { user: await createUser(createSchema.parse(request.body), { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.put("/:id", { preHandler: [app.requireAdminPermission("usuarios", "editar")] }, async (request) => {
-    return { user: updateUser(Number(request.params.id), userSchema.parse(request.body), request.user.id) };
+    return { user: await updateUser(Number(request.params.id), userSchema.parse(request.body), request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.delete("/:id", { preHandler: [app.requireAdminPermission("usuarios", "eliminar")] }, async (request) => {
-    const user = deactivateUser(Number(request.params.id), request.user.id);
+    const user = await deactivateUser(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
     return { user, deactivated: true };
   });
 }

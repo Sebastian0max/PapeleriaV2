@@ -1,41 +1,45 @@
 import { buildApp } from "./app.js";
 import { config } from "./config.js";
-import { downloadDb, startPeriodicBackup, flushOnShutdown } from "./services/cloud-backup.js";
 import { getDb } from "./db/connection.js";
 import { purgeOldTrash } from "./services/products-service.js";
-import { createDailyBackup } from "./services/backup-service.js";
 
-// Restore DB from cloud before anything else
-await downloadDb();
+const isPostgres = !!process.env.SUPABASE_DATABASE_URL;
 
-getDb();
-
-// Purge old trash on startup (items older than 7 days)
-const purged = purgeOldTrash(7);
-console.log(`[startup] Papelera: ${purged.purged} productos purgados.`);
+if (isPostgres) {
+  console.log("[startup] Postgres mode.");
+  const { runMigrationIfNeeded } = await import("./db/postgres-migrate.js");
+  await runMigrationIfNeeded();
+  console.log("[startup] Postgres schema & seed complete.");
+} else {
+  console.log("[startup] SQLite mode.");
+  const { downloadDb, startPeriodicBackup, flushOnShutdown } = await import("./services/cloud-backup.js");
+  await downloadDb();
+  getDb();
+  const purged = purgeOldTrash(7);
+  console.log(`[startup] Papelera: ${purged.purged} productos purgados.`);
+  startPeriodicBackup();
+  setInterval(async () => {
+    const h = new Date().getHours();
+    if (h === 3) {
+      const { createDailyBackup } = await import("./services/backup-service.js");
+      await createDailyBackup();
+    }
+  }, 3600_000);
+  setTimeout(async () => {
+    const { createDailyBackup } = await import("./services/backup-service.js");
+    await createDailyBackup();
+  }, 60_000);
+  process.on("SIGTERM", async () => {
+    console.log("[server] SIGTERM received, flushing DB...");
+    await flushOnShutdown();
+    process.exit(0);
+  });
+  process.on("SIGINT", async () => {
+    console.log("[server] SIGINT received, flushing DB...");
+    await flushOnShutdown();
+    process.exit(0);
+  });
+}
 
 const app = buildApp();
 await app.listen({ host: config.host, port: config.port });
-
-// Start periodic cloud backups
-startPeriodicBackup();
-
-// Daily backup at midnight-ish (check every hour)
-setInterval(async () => {
-  const h = new Date().getHours();
-  if (h === 3) await createDailyBackup();
-}, 3600_000);
-// Also run on startup
-setTimeout(() => createDailyBackup(), 60_000);
-
-// Flush pending uploads before shutdown
-process.on("SIGTERM", async () => {
-  console.log("[server] SIGTERM received, flushing DB...");
-  await flushOnShutdown();
-  process.exit(0);
-});
-process.on("SIGINT", async () => {
-  console.log("[server] SIGINT received, flushing DB...");
-  await flushOnShutdown();
-  process.exit(0);
-});

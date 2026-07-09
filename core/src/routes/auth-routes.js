@@ -15,7 +15,7 @@ export async function authRoutes(app) {
     if (!rl.allowed) {
       return reply.code(429).send({ message: `Demasiados intentos. Espera ${rl.retryAfter}s.` });
     }
-    const user = findUserByUsername(input.usuario);
+    const user = await findUserByUsername(input.usuario, { client: request.client, tenantId: request.tenantId });
     if (!user || !verifyPassword(input.password, user.password_hash)) {
       return reply.code(401).send({ message: "Usuario o password incorrectos" });
     }
@@ -26,6 +26,6 @@ export async function authRoutes(app) {
   });
 
   app.get("/me", { preHandler: [app.authenticate] }, async (request) => {
-    return { user: getUserSessionById(request.user.id) };
+    return { user: await getUserSessionById(request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 }

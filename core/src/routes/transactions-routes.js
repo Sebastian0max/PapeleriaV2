@@ -20,16 +20,12 @@ const revertSchema = z.object({
 export async function transactionsRoutes(app) {
   app.get("/", { preHandler: [app.requirePermission("reportes", "ver")] }, async (request) => {
     const query = querySchema.parse(request.query);
-    return listTransactions(query);
+    return await listTransactions(query, { client: request.client, tenantId: request.tenantId });
   });
 
   app.post("/:id/revertir", { preHandler: [app.requirePermission("ventas", "eliminar")] }, async (request) => {
     const { password, motivo } = revertSchema.parse(request.body);
-    assertAdminPassword(request.user.id, password);
-    return revertTransaction({
-      movimientoId: Number(request.params.id),
-      usuarioId: request.user.id,
-      motivo
-    });
+    await assertAdminPassword(request.user.id, password, request.client, request.tenantId);
+    return await revertTransaction({ movimientoId: Number(request.params.id), usuarioId: request.user.id, motivo, client: request.client, tenantId: request.tenantId });
   });
 }
