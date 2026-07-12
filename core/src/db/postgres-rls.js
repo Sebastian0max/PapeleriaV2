@@ -1,4 +1,6 @@
 export const rlsSQL = `
+CREATE SCHEMA IF NOT EXISTS app;
+
 CREATE OR REPLACE FUNCTION app.current_tenant_id()
 RETURNS UUID
 LANGUAGE SQL

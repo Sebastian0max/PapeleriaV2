@@ -1,10 +1,5 @@
 import { getDb } from "../db/connection.js";
-import { config } from "../config.js";
-import fs from "node:fs";
-import { Jimp } from "jimp";
-import path from "node:path";
 import { logAudit, logProductChanges } from "./audit-service.js";
-import { uploadImage, isCloudEnabled } from "./cloud-backup.js";
 
 // ── Postgres helpers ──────────────────────────────────────────────
 
@@ -13,9 +8,9 @@ function mapProductRow(row) {
   return {
     id: row.id,
     nombre: row.nombre,
-    sku: row.codigo || null,
-    codigo_barras: null,
-    categoria: null,
+    sku: row.sku || row.codigo || null,
+    codigo_barras: row.codigo_barras || null,
+    categoria: row.categoria || null,
     cantidad_stock: Number(row.stock),
     stock_minimo: Number(row.stock_minimo),
     precio: Number(row.precio_venta),
@@ -23,11 +18,11 @@ function mapProductRow(row) {
     activo: row.activo ? 1 : 0,
     imagen_url: null,
     thumbnail_url: null,
-    en_papelera: row.activo ? 0 : 1,
+    en_papelera: row.en_papelera ? 1 : 0,
     creado_en: row.created_at,
     actualizado_en: row.updated_at,
-    fecha_eliminacion: null,
-    eliminado_por: null,
+    fecha_eliminacion: row.fecha_eliminacion || null,
+    eliminado_por: row.eliminado_por || null,
   };
 }
 
@@ -35,9 +30,9 @@ async function listProductsPostgres(client, tenantId, search) {
   const term = `%${search}%`;
   const { rows } = await client.query(
     `SELECT * FROM productos
-     WHERE tenant_id = $1 AND activo = TRUE
-       AND ($2 = '%%' OR nombre ILIKE $2 OR codigo ILIKE $2)
-     ORDER BY nombre ASC`,
+     WHERE tenant_id = $1 AND activo = TRUE AND en_papelera = FALSE
+       AND ($2 = '%%' OR nombre ILIKE $2 OR codigo ILIKE $2 OR codigo_barras ILIKE $2 OR nombre_normalizado ILIKE $2 OR categoria ILIKE $2)
+     ORDER BY COALESCE(categoria, 'General') ASC, nombre ASC`,
     [tenantId, term]
   );
   return rows.map(mapProductRow);
@@ -45,11 +40,13 @@ async function listProductsPostgres(client, tenantId, search) {
 
 async function createProductPostgres(client, tenantId, input) {
   const nombre = String(input.nombre || "").trim();
+  const nombreNormalizado = String(nombre).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
   const { rows } = await client.query(
-    `INSERT INTO productos (tenant_id, codigo, nombre, precio_compra, precio_venta, stock, stock_minimo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO productos (tenant_id, codigo, sku, codigo_barras, nombre, nombre_normalizado, categoria, precio_compra, precio_venta, stock, stock_minimo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
-    [tenantId, input.sku || null, nombre, input.costo || 0, input.precio || 0, input.cantidad_stock || 0, input.stock_minimo || 0]
+    [tenantId, input.sku || null, input.sku || null, input.codigo_barras || null, nombre, nombreNormalizado,
+     input.categoria || null, input.costo || 0, input.precio || 0, input.cantidad_stock || 0, input.stock_minimo || 0]
   );
   return mapProductRow(rows[0]);
 }
@@ -64,42 +61,78 @@ async function updateProductPostgres(client, tenantId, id, input, usuarioId) {
     error.statusCode = 404;
     throw error;
   }
+  const before = existing[0];
+
+  const nombre = input.nombre ? String(input.nombre).trim() : undefined;
+  const nombreNormalizado = nombre ? nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ") : undefined;
 
   const { rows } = await client.query(
     `UPDATE productos
      SET codigo = COALESCE($1, codigo),
-         nombre = COALESCE($2, nombre),
-         precio_compra = COALESCE($3, precio_compra),
-         precio_venta = COALESCE($4, precio_venta),
-         stock = COALESCE($5, stock),
-         stock_minimo = COALESCE($6, stock_minimo),
-         activo = COALESCE($7, activo),
+         sku = COALESCE($2, sku),
+         codigo_barras = COALESCE($3, codigo_barras),
+         nombre = COALESCE($4, nombre),
+         nombre_normalizado = COALESCE($5, nombre_normalizado),
+         categoria = COALESCE($6, categoria),
+         precio_compra = COALESCE($7, precio_compra),
+         precio_venta = COALESCE($8, precio_venta),
+         stock = COALESCE($9, stock),
+         stock_minimo = COALESCE($10, stock_minimo),
+         activo = COALESCE($11, activo),
          updated_at = NOW()
-     WHERE id = $8 AND tenant_id = $9
+     WHERE id = $12 AND tenant_id = $13
      RETURNING *`,
-    [input.sku, input.nombre, input.costo, input.precio, input.cantidad_stock, input.stock_minimo, input.activo, id, tenantId]
+    [input.sku || null, input.sku || null, input.codigo_barras || null, nombre || null,
+     nombreNormalizado || null, input.categoria || null, input.costo, input.precio,
+     input.cantidad_stock, input.stock_minimo, input.activo, id, tenantId]
   );
-  return mapProductRow(rows[0] || null);
+  const after = rows[0] || null;
+  if (usuarioId && after) {
+    logProductChanges({ usuarioId, productId: id, accion: "actualizar", before, after, detalle: "Modificacion manual" });
+  }
+  return mapProductRow(after);
 }
 
 async function deleteProductPostgres(client, tenantId, id, usuarioId) {
-  const { rows } = await client.query(
-    `UPDATE productos SET activo = FALSE, updated_at = NOW()
-     WHERE id = $1 AND tenant_id = $2 AND activo = TRUE
-     RETURNING id`,
+  const { rows: product } = await client.query(
+    'SELECT id, en_papelera FROM productos WHERE id = $1 AND tenant_id = $2',
     [id, tenantId]
+  );
+  if (!product[0]) {
+    const error = new Error("Producto no encontrado");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (product[0].en_papelera) {
+    const error = new Error("Este producto ya esta en la papelera");
+    error.statusCode = 400;
+    throw error;
+  }
+  const { rows } = await client.query(
+    `UPDATE productos SET en_papelera = TRUE, fecha_eliminacion = NOW(), eliminado_por = $3, updated_at = NOW()
+     WHERE id = $1 AND tenant_id = $2 AND en_papelera = FALSE
+     RETURNING id`,
+    [id, tenantId, usuarioId || null]
   );
   if (!rows[0]) {
     const error = new Error("Producto no encontrado");
     error.statusCode = 404;
     throw error;
   }
+  if (usuarioId) {
+    await client.query(
+      `INSERT INTO audit_log (tenant_id, user_id, entidad, entidad_id, accion, detalle) VALUES ($1,$2,'producto',$3,'papelera','Movido a papelera')`,
+      [tenantId, usuarioId, id]
+    );
+  }
   return { deleted: false, trash: true, message: "Producto movido a la papelera." };
 }
 
 async function listTrashProductsPostgres(client, tenantId) {
   const { rows } = await client.query(
-    `SELECT * FROM productos WHERE tenant_id = $1 AND activo = FALSE ORDER BY updated_at DESC`,
+    `SELECT p.*, u.username AS eliminado_por_usuario
+     FROM productos p LEFT JOIN users u ON u.id = p.eliminado_por
+     WHERE p.tenant_id = $1 AND p.en_papelera = TRUE ORDER BY p.fecha_eliminacion DESC`,
     [tenantId]
   );
   return rows.map(mapProductRow);
@@ -107,8 +140,8 @@ async function listTrashProductsPostgres(client, tenantId) {
 
 async function restoreProductPostgres(client, tenantId, id, usuarioId) {
   const { rows } = await client.query(
-    `UPDATE productos SET activo = TRUE, updated_at = NOW()
-     WHERE id = $1 AND tenant_id = $2 AND activo = FALSE
+    `UPDATE productos SET en_papelera = FALSE, fecha_eliminacion = NULL, eliminado_por = NULL, updated_at = NOW()
+     WHERE id = $1 AND tenant_id = $2 AND en_papelera = TRUE
      RETURNING *`,
     [id, tenantId]
   );
@@ -117,16 +150,41 @@ async function restoreProductPostgres(client, tenantId, id, usuarioId) {
     error.statusCode = 404;
     throw error;
   }
+  if (usuarioId) {
+    await client.query(
+      `INSERT INTO audit_log (tenant_id, user_id, entidad, entidad_id, accion, detalle) VALUES ($1,$2,'producto',$3,'restaurar','Restaurado desde la papelera')`,
+      [tenantId, usuarioId, id]
+    );
+  }
   return { restored: true, product: mapProductRow(rows[0]) };
 }
 
 async function purgeOldTrashPostgres(client, tenantId, days) {
-  const { rowCount } = await client.query(
-    `DELETE FROM productos WHERE tenant_id = $1 AND activo = FALSE
-     AND updated_at <= NOW() - ($2 || ' days')::INTERVAL`,
+  const { rows: old } = await client.query(
+    `SELECT id FROM productos WHERE tenant_id = $1 AND en_papelera = TRUE
+     AND fecha_eliminacion IS NOT NULL AND fecha_eliminacion <= NOW() - ($2 || ' days')::INTERVAL`,
     [tenantId, days]
   );
-  return { purged: rowCount };
+  const ids = old.map(r => r.id);
+  if (ids.length > 0) {
+    await client.query(
+      `DELETE FROM transactions WHERE tenant_id = $1 AND referencia_id = ANY($2::uuid[]) AND referencia_tipo = 'producto'`,
+      [tenantId, ids]
+    );
+    await client.query(
+      `DELETE FROM ventas_detalle WHERE tenant_id = $1 AND producto_id = ANY($2::uuid[])`,
+      [tenantId, ids]
+    );
+    await client.query(
+      `DELETE FROM audit_log WHERE tenant_id = $1 AND entidad = 'producto' AND entidad_id = ANY($2::uuid[])`,
+      [tenantId, ids]
+    );
+    await client.query(
+      `DELETE FROM productos WHERE id = ANY($1::uuid[]) AND tenant_id = $2`,
+      [ids, tenantId]
+    );
+  }
+  return { purged: ids.length };
 }
 
 // ── Exported functions (dual-mode) ────────────────────────────────
@@ -252,89 +310,7 @@ export function purgeOldTrash(days = 7, { client, tenantId } = {}) {
   return { purged: count };
 }
 
-export async function updateProductImage(id, file, { client, tenantId } = {}) {
-  if (!file) {
-    const error = new Error("Imagen requerida");
-    error.statusCode = 400;
-    throw error;
-  }
-  const allowed = new Map([
-    ["image/jpeg", ".jpg"], ["image/png", ".png"], ["image/webp", ".webp"]
-  ]);
-  if (!allowed.has(file.mimetype)) {
-    const error = new Error("Formato de imagen invalido");
-    error.statusCode = 400;
-    throw error;
-  }
-  let product;
-  if (client) {
-    const { rows } = await client.query('SELECT * FROM productos WHERE id = $1 AND tenant_id = $2 AND activo = TRUE', [id, tenantId]);
-    product = rows[0] || null;
-  } else {
-    product = getDb().prepare("SELECT * FROM productos WHERE id = ? AND activo = 1").get(id);
-  }
-  if (!product) {
-    const error = new Error("Producto no encontrado");
-    error.statusCode = 404;
-    throw error;
-  }
-  const ext = allowed.get(file.mimetype);
-  const bytes = await file.toBuffer();
-  if (bytes.length > 2 * 1024 * 1024) {
-    const error = new Error("La imagen no puede superar 2MB");
-    error.statusCode = 413;
-    throw error;
-  }
-  const name = `${id}-${Date.now()}${ext}`;
-  const thumbName = `${id}-${Date.now()}-thumb.jpg`;
-  let url, thumbUrl;
-  if (isCloudEnabled()) {
-    const cloudUrl = await uploadImage(name, bytes, file.mimetype);
-    if (!cloudUrl) {
-      const error = new Error("No se pudo subir la imagen a la nube");
-      error.statusCode = 500;
-      throw error;
-    }
-    url = cloudUrl;
-    try {
-      const image = await Jimp.read(bytes);
-      image.cover({ w: 160, h: 160 });
-      const thumbBuffer = await image.getBuffer("image/jpeg");
-      const cloudThumbUrl = await uploadImage(thumbName, thumbBuffer, "image/jpeg");
-      thumbUrl = cloudThumbUrl || cloudUrl;
-    } catch {
-      thumbUrl = cloudUrl;
-    }
-  } else {
-    const dir = path.join(config.uploadsDir, "productos");
-    fs.mkdirSync(dir, { recursive: true });
-    const fullPath = path.join(dir, name);
-    const thumbPath = path.join(dir, thumbName);
-    fs.writeFileSync(fullPath, bytes);
-    try {
-      await createThumbnail(bytes, thumbPath);
-    } catch {
-      fs.rmSync(fullPath, { force: true });
-      const error = new Error("La imagen no se pudo procesar");
-      error.statusCode = 400;
-      throw error;
-    }
-    url = `/uploads/productos/${name}`;
-    thumbUrl = `/uploads/productos/${thumbName}`;
-  }
-  if (client) {
-    await client.query(
-      'UPDATE productos SET imagen_url = $1, thumbnail_url = $2, updated_at = NOW() WHERE id = $3 AND tenant_id = $4',
-      [url, thumbUrl, id, tenantId]
-    );
-    const { rows } = await client.query('SELECT * FROM productos WHERE id = $1', [id]);
-    return mapProductRow(rows[0] || null);
-  }
-  getDb().prepare(`
-    UPDATE productos SET imagen_url = ?, thumbnail_url = ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?
-  `).run(url, thumbUrl, id);
-  return getDb().prepare("SELECT * FROM productos WHERE id = ?").get(id);
-}
+
 
 export function updateStock({ productoId, tipo, cantidad, usuarioId, nota, client, tenantId } = {}) {
   if (client) return updateStockPostgres(client, tenantId, productoId, tipo, cantidad, usuarioId, nota);
@@ -374,12 +350,34 @@ async function updateStockPostgres(client, tenantId, productoId, tipo, cantidad,
     error.statusCode = 404;
     throw error;
   }
+  const currentStock = Number(product[0].stock);
   const delta = tipo === "entrada" ? cantidad : -cantidad;
-  await client.query(
-    `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-    [delta, productoId, tenantId]
+  if (currentStock + delta < 0) {
+    const error = new Error("Stock insuficiente");
+    error.statusCode = 409;
+    throw error;
+  }
+  await client.query('BEGIN');
+  try {
+    await client.query(
+      `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+      [delta, productoId, tenantId]
+    );
+    await client.query(
+      `INSERT INTO transactions (tenant_id, tipo, referencia_id, referencia_tipo, monto, descripcion, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [tenantId, tipo, productoId, 'producto', cantidad, nota || null, usuarioId || null]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+  const { rows } = await client.query(
+    'SELECT * FROM productos WHERE id = $1 AND tenant_id = $2',
+    [productoId, tenantId]
   );
-  return mapProductRow(product[0]);
+  return mapProductRow(rows[0]);
 }
 
 export function normalizeProductName(value) {
@@ -406,8 +404,4 @@ function cleanOptional(value) {
   return text ? text : null;
 }
 
-async function createThumbnail(bytes, thumbPath) {
-  const image = await Jimp.read(bytes);
-  image.cover({ w: 160, h: 160 });
-  await image.write(thumbPath);
-}
+

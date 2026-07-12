@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createProduct, deleteProduct, listProducts, listTrashProducts, restoreProduct, purgeOldTrash, updateProduct, updateProductImage, updateStock } from "../services/products-service.js";
+import { createProduct, deleteProduct, listProducts, listTrashProducts, restoreProduct, purgeOldTrash, updateProduct, updateStock } from "../services/products-service.js";
 
 const productSchema = z.object({
   nombre: z.string().min(1),
@@ -48,11 +48,6 @@ export async function productRoutes(app) {
 
   app.post("/purgar", { preHandler: [app.requireAdminPermission("productos", "eliminar")] }, async (request) => {
     return await purgeOldTrash(7, { client: request.client, tenantId: request.tenantId });
-  });
-
-  app.post("/:id/imagen", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
-    const file = await request.file();
-    return { product: await updateProductImage(Number(request.params.id), file, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/:id/movimientos", { preHandler: [app.requireAdminPermission("stock", "crear")] }, async (request) => {

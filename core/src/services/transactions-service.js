@@ -12,7 +12,9 @@ function mapTransactionRow(row) {
     usuario_id: row.user_id,
     fecha: row.created_at,
     nota: row.descripcion,
-    revertida: 0,
+    revertida: row.revertida ? 1 : 0,
+    revertida_por: row.revertida_por || null,
+    motivo_reversion: row.motivo_reversion || null,
     producto_nombre: row.producto_nombre || null,
   };
 }
@@ -39,7 +41,7 @@ async function listTransactionsPostgres(client, tenantId, query = {}) {
   params.push(Number(query.limit) || 50);
 
   const { rows } = await client.query(sql, params);
-  return rows.map(r => ({ ...r, id: r.id, producto_id: r.referencia_id }));
+  return rows.map(mapTransactionRow);
 }
 
 async function revertTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo }) {
@@ -50,6 +52,32 @@ async function revertTransactionPostgres(client, tenantId, { movimientoId, usuar
   if (!tx[0]) {
     const error = new Error("Transacción no encontrada");
     error.statusCode = 404;
+    throw error;
+  }
+  if (tx[0].revertida) {
+    const error = new Error("Esta transacción ya fue revertida");
+    error.statusCode = 400;
+    throw error;
+  }
+  const row = tx[0];
+  const prodId = row.referencia_id;
+  const monto = Number(row.monto);
+  await client.query('BEGIN');
+  try {
+    if (prodId) {
+      const delta = row.tipo === 'venta' || row.tipo === 'salida' ? monto : -monto;
+      await client.query(
+        `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+        [delta, prodId, tenantId]
+      );
+    }
+    await client.query(
+      `UPDATE transactions SET revertida = TRUE, revertida_por = $1, motivo_reversion = $2 WHERE id = $3`,
+      [usuarioId, motivo || null, movimientoId]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
     throw error;
   }
   return { reverted: true };

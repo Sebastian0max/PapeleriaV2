@@ -188,14 +188,14 @@ export function templateCsv() {
 async function findExistingProductPostgres(client, tenantId, item) {
   if (item.codigo_barras) {
     const { rows } = await client.query(
-      'SELECT * FROM productos WHERE (codigo = $1 OR nombre = $2) AND tenant_id = $3 LIMIT 1',
-      [item.codigo_barras, item.nombre, tenantId]
+      'SELECT * FROM productos WHERE (codigo_barras = $1 OR sku = $1) AND tenant_id = $2 LIMIT 1',
+      [item.codigo_barras, tenantId]
     );
     if (rows[0]) return rows[0];
   }
   const { rows } = await client.query(
-    'SELECT * FROM productos WHERE nombre = $1 AND tenant_id = $2 LIMIT 1',
-    [item.nombre, tenantId]
+    'SELECT * FROM productos WHERE nombre_normalizado = $1 AND tenant_id = $2 LIMIT 1',
+    [item.nombre_normalizado, tenantId]
   );
   return rows[0] || null;
 }
@@ -205,21 +205,51 @@ async function applyImportPostgres(client, tenantId, preview) {
   let updated = 0;
   for (const entry of preview.nuevos) {
     const item = entry.nuevo;
-    await client.query(
-      `INSERT INTO productos (tenant_id, codigo, nombre, precio_venta, stock, stock_minimo)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [tenantId, item.codigo_barras || null, item.nombre, item.precio || 0, item.cantidad_stock || 0, item.stock_minimo || 0]
+    const nombre = String(item.nombre || "").trim();
+    const nombreNormalizado = nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+    const { rows } = await client.query(
+      `INSERT INTO productos (tenant_id, codigo, sku, codigo_barras, nombre, nombre_normalizado, categoria, precio_compra, precio_venta, stock, stock_minimo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [tenantId, item.codigo_barras || null, item.sku || null, item.codigo_barras || null,
+       nombre, nombreNormalizado, item.categoria || null,
+       0, item.precio || 0, item.cantidad_stock || 0, item.stock_minimo || 0]
     );
+    if (preview.adminId) {
+      await client.query(
+        `INSERT INTO audit_log (tenant_id, user_id, accion, entidad, entidad_id, detalle) VALUES ($1,$2,'importar_creado','producto_import',$3,$4)`,
+        [tenantId, preview.adminId, rows[0].id, JSON.stringify({ nuevo: item, archivo: preview.filename })]
+      );
+    }
     created++;
   }
   for (const entry of preview.actualizados) {
     const item = entry.nuevo;
+    const nombre = item.nombre ? String(item.nombre).trim() : undefined;
+    const nombreNormalizado = nombre ? nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ") : undefined;
     await client.query(
-      `UPDATE productos SET nombre = $1, codigo = COALESCE($2, codigo), precio_venta = COALESCE($3, precio_venta),
-       stock = COALESCE($4, stock), stock_minimo = COALESCE($5, stock_minimo), updated_at = NOW()
-       WHERE id = $6 AND tenant_id = $7`,
-      [item.nombre, item.codigo_barras, item.precio, item.cantidad_stock, item.stock_minimo, entry.producto_id, tenantId]
+      `UPDATE productos SET
+        codigo = COALESCE($1, codigo),
+        sku = COALESCE($2, sku),
+        codigo_barras = COALESCE($3, codigo_barras),
+        nombre = COALESCE($4, nombre),
+        nombre_normalizado = COALESCE($5, nombre_normalizado),
+        categoria = COALESCE($6, categoria),
+        precio_venta = COALESCE($7, precio_venta),
+        stock = COALESCE($8, stock),
+        stock_minimo = COALESCE($9, stock_minimo),
+        updated_at = NOW()
+       WHERE id = $10 AND tenant_id = $11`,
+      [item.codigo_barras || null, item.sku || null, item.codigo_barras || null,
+       nombre || null, nombreNormalizado || null, item.categoria || null,
+       item.precio, item.cantidad_stock, item.stock_minimo,
+       entry.producto_id, tenantId]
     );
+    if (preview.adminId) {
+      await client.query(
+        `INSERT INTO audit_log (tenant_id, user_id, accion, entidad, entidad_id, detalle) VALUES ($1,$2,'importar_actualizado','producto_import',$3,$4)`,
+        [tenantId, preview.adminId, entry.producto_id, JSON.stringify({ anterior: entry.anterior, nuevo: item, archivo: preview.filename })]
+      );
+    }
     updated++;
   }
   return { created, updated, unchanged: preview.unchanged, errors: preview.errores.length };
