@@ -54,3 +54,30 @@ export async function seedDefaultPermissions(client) {
     );
   }
 }
+
+export async function seedAdminRoleWithPermissions(client, tenantId) {
+  const { rows: existing } = await client.query(
+    `SELECT id FROM roles WHERE tenant_id = $1 AND nombre = 'admin' AND es_sistema = TRUE`,
+    [tenantId]
+  );
+  let roleId;
+  if (existing[0]) {
+    roleId = existing[0].id;
+  } else {
+    const { rows } = await client.query(
+      `INSERT INTO roles (tenant_id, nombre, descripcion, es_sistema, activo)
+       VALUES ($1, 'admin', 'Rol administrador con todos los permisos', TRUE, TRUE)
+       RETURNING id`,
+      [tenantId]
+    );
+    roleId = rows[0].id;
+  }
+
+  const { rows: allPerms } = await client.query(`SELECT id FROM permisos`);
+  for (const perm of allPerms) {
+    await client.query(
+      `INSERT INTO rol_permisos (tenant_id, rol_id, permiso_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [tenantId, roleId, perm.id]
+    );
+  }
+}

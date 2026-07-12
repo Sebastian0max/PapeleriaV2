@@ -33,7 +33,7 @@ export async function hasPermissionPostgres(client, tenantId, userId, modulo, ac
      JOIN users u ON u.rol_id = rp.rol_id
      WHERE u.id = $1 AND u.tenant_id = $2 AND rp.tenant_id = $2
        AND p.codigo = $3`,
-    [userId, tenantId, `${modulo}:${accion}`]
+    [userId, tenantId, `${modulo}_${accion}`]
   );
   return rows.length > 0;
 }
