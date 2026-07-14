@@ -160,31 +160,40 @@ async function restoreProductPostgres(client, tenantId, id, usuarioId) {
 }
 
 async function purgeOldTrashPostgres(client, tenantId, days) {
-  const { rows: old } = await client.query(
-    `SELECT id FROM productos WHERE tenant_id = $1 AND en_papelera = TRUE
-     AND fecha_eliminacion IS NOT NULL AND fecha_eliminacion <= NOW() - ($2 || ' days')::INTERVAL`,
-    [tenantId, days]
-  );
-  const ids = old.map(r => r.id);
-  if (ids.length > 0) {
-    await client.query(
-      `DELETE FROM transactions WHERE tenant_id = $1 AND referencia_id = ANY($2::uuid[]) AND referencia_tipo = 'producto'`,
-      [tenantId, ids]
+  try {
+    const { rows: old } = await client.query(
+      `SELECT id FROM productos WHERE tenant_id = $1 AND en_papelera = TRUE
+       AND fecha_eliminacion IS NOT NULL AND fecha_eliminacion <= NOW() - ($2 || ' days')::INTERVAL`,
+      [tenantId, days]
     );
-    await client.query(
-      `DELETE FROM ventas_detalle WHERE tenant_id = $1 AND producto_id = ANY($2::uuid[])`,
-      [tenantId, ids]
-    );
-    await client.query(
-      `DELETE FROM audit_log WHERE tenant_id = $1 AND entidad = 'producto' AND entidad_id = ANY($2::uuid[])`,
-      [tenantId, ids]
-    );
-    await client.query(
-      `DELETE FROM productos WHERE id = ANY($1::uuid[]) AND tenant_id = $2`,
-      [ids, tenantId]
-    );
+    const ids = old.map(r => r.id);
+    if (ids.length > 0) {
+      await client.query(
+        `DELETE FROM transactions WHERE tenant_id = $1 AND referencia_id = ANY($2::uuid[]) AND referencia_tipo = 'producto'`,
+        [tenantId, ids]
+      );
+      await client.query(
+        `DELETE FROM ventas_detalle WHERE tenant_id = $1 AND producto_id = ANY($2::uuid[])`,
+        [tenantId, ids]
+      );
+      await client.query(
+        `DELETE FROM audit_log WHERE tenant_id = $1 AND entidad = 'producto' AND entidad_id = ANY($2::uuid[])`,
+        [tenantId, ids]
+      );
+      await client.query(
+        `DELETE FROM ventas WHERE tenant_id = $1 AND id NOT IN (SELECT venta_id FROM ventas_detalle WHERE tenant_id = $1)`,
+        [tenantId]
+      );
+      await client.query(
+        `DELETE FROM productos WHERE id = ANY($1::uuid[]) AND tenant_id = $2`,
+        [ids, tenantId]
+      );
+    }
+    return { purged: ids.length };
+  } catch (err) {
+    console.error("[purgeOldTrashPostgres] Error purging trash:", err.message);
+    return { purged: 0, error: err.message };
   }
-  return { purged: ids.length };
 }
 
 // ── Exported functions (dual-mode) ────────────────────────────────
@@ -293,21 +302,32 @@ export function restoreProduct(id, usuarioId, { client, tenantId } = {}) {
 
 export function purgeOldTrash(days = 7, { client, tenantId } = {}) {
   if (client) return purgeOldTrashPostgres(client, tenantId, days);
-  const db = getDb();
-  const old = db.prepare(`
-    SELECT id, nombre FROM productos
-    WHERE en_papelera = 1 AND fecha_eliminacion IS NOT NULL
-    AND julianday('now') - julianday(fecha_eliminacion) >= ?
-  `).all(days);
-  const count = old.length;
-  if (count > 0) {
-    const ids = old.map(p => p.id);
-    db.prepare(`DELETE FROM movimientos WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
-    db.prepare(`DELETE FROM ventas WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
-    db.prepare(`DELETE FROM bitacora_importaciones WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
-    db.prepare(`DELETE FROM productos WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+  try {
+    const db = getDb();
+    const old = db.prepare(`
+      SELECT id, nombre FROM productos
+      WHERE en_papelera = 1 AND fecha_eliminacion IS NOT NULL
+      AND julianday('now') - julianday(fecha_eliminacion) >= ?
+    `).all(days);
+    const count = old.length;
+    if (count > 0) {
+      const ids = old.map(p => p.id);
+      const movIds = db.prepare(`SELECT id FROM movimientos WHERE producto_id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(r => r.id);
+      // FK-safe order: bitacora_reversiones → movimientos, then ventas, imports, audit, finally productos
+      if (movIds.length > 0) {
+        db.prepare(`DELETE FROM bitacora_reversiones WHERE movimiento_id IN (${movIds.map(() => '?').join(',')})`).run(...movIds);
+      }
+      db.prepare(`DELETE FROM bitacora_auditoria WHERE entidad = 'producto' AND entidad_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+      db.prepare(`DELETE FROM movimientos WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+      db.prepare(`DELETE FROM ventas WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+      db.prepare(`DELETE FROM bitacora_importaciones WHERE producto_id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+      db.prepare(`DELETE FROM productos WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+    }
+    return { purged: count };
+  } catch (err) {
+    console.error("[purgeOldTrash] Error purging trash:", err.message);
+    return { purged: 0, error: err.message };
   }
-  return { purged: count };
 }
 
 
