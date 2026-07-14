@@ -20,7 +20,7 @@ export async function authRoutes(app) {
       return reply.code(401).send({ message: "Usuario o password incorrectos" });
     }
     resetRateLimit(`login:${ip}`);
-    const sessionUser = getSessionUser(user);
+    const sessionUser = await getSessionUser(user, { client: request.client, tenantId: request.tenantId });
     const token = app.jwt.sign({ id: user.id, usuario: user.usuario, rol: sessionUser.rol });
     return { token, user: sessionUser };
   });

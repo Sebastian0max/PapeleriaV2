@@ -121,8 +121,8 @@ async function deleteProductPostgres(client, tenantId, id, usuarioId) {
   }
   if (usuarioId) {
     await client.query(
-      `INSERT INTO audit_log (tenant_id, user_id, entidad, entidad_id, accion, detalle) VALUES ($1,$2,'producto',$3,'papelera','Movido a papelera')`,
-      [tenantId, usuarioId, id]
+      `INSERT INTO audit_log (tenant_id, user_id, entidad, entidad_id, accion, detalle) VALUES ($1,$2,'producto',$3,'papelera',$4)`,
+      [tenantId, usuarioId, id, JSON.stringify('Movido a papelera')]
     );
   }
   return { deleted: false, trash: true, message: "Producto movido a la papelera." };
@@ -152,8 +152,8 @@ async function restoreProductPostgres(client, tenantId, id, usuarioId) {
   }
   if (usuarioId) {
     await client.query(
-      `INSERT INTO audit_log (tenant_id, user_id, entidad, entidad_id, accion, detalle) VALUES ($1,$2,'producto',$3,'restaurar','Restaurado desde la papelera')`,
-      [tenantId, usuarioId, id]
+      `INSERT INTO audit_log (tenant_id, user_id, entidad, entidad_id, accion, detalle) VALUES ($1,$2,'producto',$3,'restaurar',$4)`,
+      [tenantId, usuarioId, id, JSON.stringify('Restaurado desde la papelera')]
     );
   }
   return { restored: true, product: mapProductRow(rows[0]) };

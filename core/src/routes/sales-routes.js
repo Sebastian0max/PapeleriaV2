@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createSale, listSales, deleteSale } from "../services/sales-service.js";
 
 const saleSchema = z.object({
-  productoId: z.coerce.number().int().positive(),
+  productoId: z.number().int().positive().or(z.string().min(1)),
   cantidad: z.coerce.number().int().positive()
 });
 
@@ -17,6 +17,6 @@ export async function salesRoutes(app) {
   });
 
   app.delete("/:id", { preHandler: [app.requirePermission("ventas", "eliminar")] }, async (request) => {
-    return await deleteSale(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
+    return await deleteSale(request.client ? request.params.id : Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
   });
 }

@@ -74,3 +74,14 @@ export function listUserPermissions(userId) {
     WHERE u.id = ?
   `).all(userId).map(r => r.permiso);
 }
+
+export async function listUserPermissionsPostgres(client, tenantId, userId) {
+  const { rows } = await client.query(
+    `SELECT p.codigo FROM permisos p
+     JOIN rol_permisos rp ON rp.permiso_id = p.id
+     JOIN users u ON u.rol_id = rp.rol_id
+     WHERE u.id = $1 AND u.tenant_id = $2`,
+    [userId, tenantId]
+  );
+  return rows.map(r => r.codigo);
+}

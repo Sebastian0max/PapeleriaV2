@@ -11,7 +11,7 @@ export async function importRoutes(app) {
   app.post("/preview", { preHandler: [app.requireAdminPermission("importacion", "crear")] }, async (request) => {
     const file = await request.file();
     const parsed = await parseImportFile(file);
-    return { preview: buildImportPreview({ ...parsed, adminId: request.user.id, client: request.client, tenantId: request.tenantId }) };
+    return { preview: await buildImportPreview({ ...parsed, adminId: request.user.id, client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/confirmar", { preHandler: [app.requireAdminPermission("importacion", "crear")] }, async (request) => {

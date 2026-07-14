@@ -65,14 +65,15 @@ export async function parseImportFile(file) {
   return { rows, filename };
 }
 
-export function buildImportPreview({ rows, filename, adminId, client, tenantId } = {}) {
+export async function buildImportPreview({ rows, filename, adminId, client, tenantId } = {}) {
   const nuevos = [];
   const actualizados = [];
   const errores = [];
   const seen = new Set();
 
-  rows.forEach((raw, index) => {
-    const rowNumber = raw.__rowNumber || index + 2;
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const raw = rows[rowIdx];
+    const rowNumber = raw.__rowNumber || rowIdx + 2;
     const sheetName = raw.__sheetName || null;
     const item = normalizeImportRow(raw);
     const rowErrors = validateImportRow(item);
@@ -81,12 +82,12 @@ export function buildImportPreview({ rows, filename, adminId, client, tenantId }
     if (key) seen.add(key);
     if (rowErrors.length > 0) {
       errores.push({ rowNumber, sheetName, row: item, errores: rowErrors });
-      return;
+      continue;
     }
-    const existing = findExistingProduct(item, { client, tenantId });
+    const existing = await findExistingProduct(item, { client, tenantId });
     if (!existing) {
       nuevos.push({ rowNumber, sheetName, nuevo: item });
-      return;
+      continue;
     }
     const changes = diffProduct(existing, item);
     if (changes.length > 0) {
@@ -100,7 +101,7 @@ export function buildImportPreview({ rows, filename, adminId, client, tenantId }
         cambios: changes
       });
     }
-  });
+  }
 
   const unchanged = rows.length - nuevos.length - actualizados.length - errores.length;
   const noQuantityColumn = rows.length > 0 &&
@@ -111,7 +112,7 @@ export function buildImportPreview({ rows, filename, adminId, client, tenantId }
   return preview;
 }
 
-export function applyImportPreview(token, adminId, { client, tenantId } = {}) {
+export async function applyImportPreview(token, adminId, { client, tenantId } = {}) {
   const preview = PREVIEW_CACHE.get(token);
   if (!preview || preview.adminId !== adminId) {
     const error = new Error("Vista previa expirada o invalida");

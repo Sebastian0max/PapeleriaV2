@@ -66,7 +66,18 @@ export function buildApp() {
     }
   });
 
-  app.get("/health", async () => ({ ok: true }));
+  app.get("/health", async (request) => {
+    let dbStatus = 'sqlite';
+    if (isPostgres && request.client) {
+      try {
+        const r = await request.client.query('SELECT $1::text as t', ['hello']);
+        dbStatus = `pg:${r.rows[0].t}`;
+      } catch (e) {
+        dbStatus = `pg:${e.message}`;
+      }
+    }
+    return { ok: true, db: dbStatus };
+  });
   app.get("/uploads/productos/:file", async (request, reply) => {
     const file = path.basename(request.params.file);
     const fullPath = path.join(config.uploadsDir, "productos", file);

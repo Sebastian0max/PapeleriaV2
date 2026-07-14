@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { getDb } from "../db/connection.js";
-import { listUserPermissions } from "./permissions-service.js";
+import { listUserPermissions, listUserPermissionsPostgres } from "./permissions-service.js";
 
 // ── Postgres helpers ──────────────────────────────────────────────
 
@@ -239,17 +239,17 @@ export function deactivateUser(id, currentUserId, { client, tenantId } = {}) {
   `).get(id);
 }
 
-export function getSessionUser(user) {
+export async function getSessionUser(user, { client, tenantId } = {}) {
   return {
     id: user.id,
     usuario: user.usuario,
     rol: user.rol_nombre || user.rol,
     rol_id: user.rol_id,
-    permisos: listUserPermissions(user.id)
+    permisos: client ? await listUserPermissionsPostgres(client, tenantId, user.id) : listUserPermissions(user.id)
   };
 }
 
-export function getUserSessionById(id, { client, tenantId } = {}) {
+export async function getUserSessionById(id, { client, tenantId } = {}) {
   if (client) return getUserSessionByIdPostgres(client, tenantId, id);
   const user = getDb().prepare(`
     SELECT u.*, COALESCE(r.nombre, u.rol) AS rol_nombre
@@ -271,5 +271,5 @@ async function getUserSessionByIdPostgres(client, tenantId, id) {
     error.statusCode = 404;
     throw error;
   }
-  return getSessionUser(user);
+  return getSessionUser(user, { client, tenantId });
 }

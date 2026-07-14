@@ -26,6 +26,6 @@ export async function transactionsRoutes(app) {
   app.post("/:id/revertir", { preHandler: [app.requirePermission("ventas", "eliminar")] }, async (request) => {
     const { password, motivo } = revertSchema.parse(request.body);
     await assertAdminPassword(request.user.id, password, request.client, request.tenantId);
-    return await revertTransaction({ movimientoId: Number(request.params.id), usuarioId: request.user.id, motivo, client: request.client, tenantId: request.tenantId });
+    return await revertTransaction({ movimientoId: request.client ? request.params.id : Number(request.params.id), usuarioId: request.user.id, motivo }, { client: request.client, tenantId: request.tenantId });
   });
 }
