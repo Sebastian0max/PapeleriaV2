@@ -3,7 +3,8 @@ import { createSale, listSales, deleteSale } from "../services/sales-service.js"
 
 const saleSchema = z.object({
   productoId: z.coerce.number().int().positive(),
-  cantidad: z.coerce.number().int().positive()
+  cantidad: z.coerce.number().int().positive(),
+  precio_unitario: z.coerce.number().positive().optional()
 });
 
 export async function salesRoutes(app) {

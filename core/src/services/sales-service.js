@@ -18,7 +18,7 @@ function mapVentaRow(row) {
   };
 }
 
-async function createSalePostgres(client, tenantId, { productoId, cantidad, usuarioId }) {
+async function createSalePostgres(client, tenantId, { productoId, cantidad, usuarioId, precio_unitario }) {
   const { rows: product } = await client.query(
     'SELECT * FROM productos WHERE id = $1 AND tenant_id = $2 AND activo = TRUE',
     [productoId, tenantId]
@@ -34,7 +34,13 @@ async function createSalePostgres(client, tenantId, { productoId, cantidad, usua
     error.statusCode = 409;
     throw error;
   }
-  const total = Number(p.precio_venta) * cantidad;
+  const precio = precio_unitario || Number(p.precio_venta);
+  if (!precio || precio <= 0) {
+    const error = new Error("No se pudo completar la venta: el producto no tiene un precio válido configurado.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const total = precio * cantidad;
   const folio = `VTA-${Date.now()}`;
   const { rows: venta } = await client.query(
     `INSERT INTO ventas (tenant_id, folio, user_id, total, forma_pago, estatus)
@@ -45,7 +51,7 @@ async function createSalePostgres(client, tenantId, { productoId, cantidad, usua
   await client.query(
     `INSERT INTO ventas_detalle (tenant_id, venta_id, producto_id, cantidad, precio_unitario, subtotal)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [tenantId, venta[0].id, productoId, cantidad, p.precio_venta, total]
+    [tenantId, venta[0].id, productoId, cantidad, precio, total]
   );
   await client.query(
     `UPDATE productos SET stock = stock - $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
@@ -57,7 +63,7 @@ async function createSalePostgres(client, tenantId, { productoId, cantidad, usua
     usuario: null,
     producto_id: productoId,
     cantidad,
-    precio_unitario: p.precio_venta,
+    precio_unitario: precio,
   };
 }
 
@@ -104,8 +110,8 @@ async function deleteSalePostgres(client, tenantId, ventaId, usuarioId) {
 
 // ── Exported functions (dual-mode) ────────────────────────────────
 
-export function createSale({ productoId, cantidad, usuarioId, client, tenantId } = {}) {
-  if (client) return createSalePostgres(client, tenantId, { productoId, cantidad, usuarioId });
+export function createSale({ productoId, cantidad, usuarioId, precio_unitario, client, tenantId } = {}) {
+  if (client) return createSalePostgres(client, tenantId, { productoId, cantidad, usuarioId, precio_unitario });
   const db = getDb();
   if (!productoId || typeof cantidad === "undefined" || cantidad === null) {
     const error = new Error("No se pudo completar la venta: la cantidad ingresada no es válida.");
@@ -128,7 +134,8 @@ export function createSale({ productoId, cantidad, usuarioId, client, tenantId }
     error.statusCode = 409;
     throw error;
   }
-  if (!product.precio || product.precio <= 0) {
+  const precio = precio_unitario || product.precio;
+  if (!precio || precio <= 0) {
     const error = new Error("No se pudo completar la venta: el producto no tiene un precio válido configurado.");
     error.statusCode = 409;
     throw error;
@@ -138,20 +145,25 @@ export function createSale({ productoId, cantidad, usuarioId, client, tenantId }
     error.statusCode = 409;
     throw error;
   }
-  const total = product.precio * cantidad;
+  const total = precio * cantidad;
   let ventaId;
   try {
     db.exec("BEGIN");
     db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock - ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?")
       .run(cantidad, productoId);
     const sale = db.prepare("INSERT INTO ventas (producto_id, cantidad, precio_unitario, total, usuario_id) VALUES (?, ?, ?, ?, ?)")
-      .run(productoId, cantidad, product.precio, total, usuarioId);
+      .run(productoId, cantidad, precio, total, usuarioId);
     ventaId = sale.lastInsertRowid;
     db.prepare("INSERT INTO movimientos (producto_id, tipo, cantidad, usuario_id, nota) VALUES (?, 'venta', ?, ?, ?)")
       .run(productoId, cantidad, usuarioId, `Venta #${ventaId}`);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
+    if (String(error).toLowerCase().includes("constraint") && String(error).toLowerCase().includes("cantidad_stock")) {
+      const e = new Error(`No se pudo completar la venta: el producto "${product.nombre}" no tiene suficiente stock disponible.`);
+      e.statusCode = 409;
+      throw e;
+    }
     throw error;
   }
   return db.prepare("SELECT v.*, p.nombre AS producto_nombre FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.id = ?")

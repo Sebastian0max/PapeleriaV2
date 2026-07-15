@@ -472,7 +472,7 @@ function ProductForm({ token, onDone }) {
   return (
     <form className="product-form" onSubmit={submit}>
       <label>Nombre del producto<input name="nombre" required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
-      <label>Cantidad en stock<input name="cantidad_stock" required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
+      <label>Stock<input name="cantidad_stock" required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
       <label>Precio de costo<input name="costo" type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
       <label>Precio de venta<input name="precio" required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
       <button title="Agregar producto"><PackagePlus size={18} /></button>
@@ -563,13 +563,13 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
 
 function SaleForm({ token, products, onDone }) {
   const [productoId, setProductoId] = useState(0);
-  const [cantidad, setCantidad] = useState(1);
+  const [cantidad, setCantidad] = useState("1");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = selectedProduct && cantidad > 0 ? selectedProduct.precio * cantidad : 0;
+  const total = selectedProduct && +cantidad > 0 ? selectedProduct.precio * +cantidad : 0;
 
   useEffect(() => {
     const prod = products.find(p => p.id === productoId);
@@ -593,22 +593,22 @@ function SaleForm({ token, products, onDone }) {
       return;
     }
 
-    if (!cantidad || cantidad <= 0) {
+    if (!cantidad || !Number.isFinite(+cantidad) || +cantidad <= 0) {
       setError("No se pudo completar la venta: la cantidad ingresada no es válida.");
       return;
     }
 
-    if (cantidad > selectedProduct.cantidad_stock) {
+    if (+cantidad > selectedProduct.cantidad_stock) {
       setError(`No se pudo completar la venta: solo hay ${selectedProduct.cantidad_stock} unidades disponibles de este producto.`);
       return;
     }
 
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
-      setMessage(`Venta exitosa: ${cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
+      setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
-      setCantidad(1);
+      setCantidad("1");
       setProductoId("");
       onDone();
     } catch (err) {
@@ -637,11 +637,11 @@ function SaleForm({ token, products, onDone }) {
           <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
         </div>
       )}
-      <input name="cantidad" type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
+      <input name="cantidad" type="number" min="1" placeholder="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
       <button title="Vender" disabled={busy}>
         <ShoppingCart size={18} />
       </button>
-      {selectedProduct && cantidad > 0 && (
+      {selectedProduct && +cantidad > 0 && (
         <div className="stock-info total-display">
           Total a cobrar: <span>${total.toLocaleString()}</span>
         </div>
