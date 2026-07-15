@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { listTransactions, revertTransaction } from "../services/transactions-service.js";
+import { listTransactions, revertTransaction, restoreTransaction } from "../services/transactions-service.js";
 import { assertAdminPassword } from "../services/admin-confirmation-service.js";
 
 const querySchema = z.object({
@@ -27,5 +27,11 @@ export async function transactionsRoutes(app) {
     const { password, motivo } = revertSchema.parse(request.body);
     await assertAdminPassword(request.user.id, password, request.client, request.tenantId);
     return await revertTransaction({ movimientoId: Number(request.params.id), usuarioId: request.user.id, motivo, client: request.client, tenantId: request.tenantId });
+  });
+
+  app.post("/:id/restaurar", { preHandler: [app.requirePermission("ventas", "eliminar")] }, async (request) => {
+    const { password, motivo } = revertSchema.parse(request.body);
+    await assertAdminPassword(request.user.id, password, request.client, request.tenantId);
+    return await restoreTransaction({ movimientoId: Number(request.params.id), usuarioId: request.user.id, motivo, client: request.client, tenantId: request.tenantId });
   });
 }

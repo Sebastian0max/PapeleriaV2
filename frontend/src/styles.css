@@ -152,6 +152,10 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
   border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-lg);
 }
 .metric svg { color: var(--accent); flex-shrink: 0; }
+.metric.metric-warning { background: var(--warning-bg); border-color: var(--warning-border); }
+.metric.metric-warning svg { color: var(--warning-text); }
+.metric.metric-warning span { color: var(--warning-text); }
+.metric.metric-warning strong { color: var(--warning-text); }
 .metric > div { display: flex; flex-direction: column; min-width: 0; }
 .metric span { color: var(--text-secondary); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .metric strong { font-size: var(--fs-xl); }
@@ -193,9 +197,9 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .row > div { min-width: 0; }
 
 /* Product row grid */
-.product-row { display: grid; grid-template-columns: minmax(220px, 1fr) 90px auto; }
-.product-title { display: flex !important; align-items: center; gap: 10px; }
-.product-title img { width: 42px; height: 42px; border-radius: var(--radius-sm); object-fit: cover; background: var(--tab-bg); flex: 0 0 auto; }
+.product-row { display: grid; grid-template-columns: minmax(180px, 1fr) 80px auto; gap: var(--space-sm); align-items: center; }
+.product-row > * { min-width: 0; }
+.product-title { min-width: 0; }
 .product-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .product-title span { color: var(--text-secondary); font-size: var(--fs-sm); }
 
@@ -289,6 +293,7 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .tl-transaction { display: grid; grid-template-columns: 70px 80px 1fr 90px auto; gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md); min-width: 0; overflow: hidden; }
 .tl-transaction[data-revertida="true"] { background: var(--tab-bg); opacity: 0.7; }
 .revert-btn { min-height: auto; padding: var(--space-xs) var(--space-sm); font-size: var(--fs-xs); white-space: nowrap; }
+.restore-btn { background: var(--accent); }
 .tl-transaction .badge { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .load-more-btn { width: 100%; padding: var(--space-md); background: var(--tab-bg); color: var(--tab-text); margin-top: var(--space-sm); }
 

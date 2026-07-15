@@ -36,8 +36,8 @@ NTUSER.DAT*
 .cache/
 .config/
 .local/
-.vscode/
-.wsl/
+.vscode*/
+.wsl*/
 .android/
 .antigravity/
 .antigravity-ide/
@@ -61,3 +61,6 @@ pseint/
 wsl/
 *.bat
 *.mjs
+*.xml
+*.pdf
+ntuser.*

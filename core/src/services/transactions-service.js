@@ -123,6 +123,73 @@ export function revertTransaction({ movimientoId, usuarioId, motivo }, { client,
   return { reverted: true };
 }
 
+async function restoreTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo }) {
+  const { rows: tx } = await client.query(
+    'SELECT * FROM transactions WHERE id = $1 AND tenant_id = $2',
+    [movimientoId, tenantId]
+  );
+  if (!tx[0]) {
+    const error = new Error("Transacción no encontrada");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (!tx[0].revertida) {
+    const error = new Error("Esta transacción no está cancelada");
+    error.statusCode = 400;
+    throw error;
+  }
+  await client.query("BEGIN");
+  try {
+    if (tx[0].tipo === "venta") {
+      await client.query("UPDATE productos SET cantidad_stock = cantidad_stock - $1 WHERE id = $2 AND tenant_id = $3",
+        [Math.abs(Number(tx[0].monto)), tx[0].referencia_id, tenantId]);
+    } else if (tx[0].tipo === "entrada") {
+      await client.query("UPDATE productos SET cantidad_stock = cantidad_stock + $1 WHERE id = $2 AND tenant_id = $3",
+        [Math.abs(Number(tx[0].monto)), tx[0].referencia_id, tenantId]);
+    }
+    await client.query("UPDATE transactions SET revertida = 0, revertida_por = NULL, motivo_reversion = NULL WHERE id = $1",
+      [movimientoId]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+  return { restored: true };
+}
+
+export function restoreTransaction({ movimientoId, usuarioId, motivo }, { client, tenantId } = {}) {
+  if (client) return restoreTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo });
+  const db = getDb();
+  const tx = db.prepare("SELECT * FROM movimientos WHERE id = ? AND en_papelera = 0").get(movimientoId);
+  if (!tx) {
+    const error = new Error("Transacción no encontrada");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (!tx.revertida) {
+    const error = new Error("Esta transacción no está cancelada");
+    error.statusCode = 400;
+    throw error;
+  }
+  try {
+    db.exec("BEGIN");
+    if (tx.tipo === "venta") {
+      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock - ? WHERE id = ?")
+        .run(tx.cantidad, tx.producto_id);
+    } else if (tx.tipo === "entrada") {
+      db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock + ? WHERE id = ?")
+        .run(tx.cantidad, tx.producto_id);
+    }
+    db.prepare("UPDATE movimientos SET revertida = 0, revertida_por = NULL, motivo_reversion = NULL WHERE id = ?")
+      .run(movimientoId);
+    db.exec("COMMIT");
+  } catch (error) {
+    if (String(error).includes("constraint")) db.exec("ROLLBACK");
+    throw error;
+  }
+  return { restored: true };
+}
+
 export function purgeOldCanceled(days = 7) {
   const db = getDb();
   const old = db.prepare(`

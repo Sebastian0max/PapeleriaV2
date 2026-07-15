@@ -176,6 +176,8 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
 
   if (!isOpen) return null;
 
+  const esRestaurar = transaccion?.revertida;
+
   async function handleConfirm() {
     if (!password) {
       setError("Debes ingresar la contraseña del administrador.");
@@ -183,7 +185,7 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
     }
     setBusy(true);
     setError("");
-    const ok = await onConfirm(transaccion.id, password, motivo);
+    const ok = await onConfirm(transaccion.id, password, motivo, esRestaurar);
     if (ok) {
       setPassword("");
       setMotivo("");
@@ -198,7 +200,7 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h3>Revertir {tipoLabel}</h3>
+        <h3>{esRestaurar ? "Restaurar" : "Revertir"} {tipoLabel}</h3>
         <p style={{ whiteSpace: "pre-line", margin: "16px 0" }}>
           Producto: {transaccion?.producto_nombre}{"\n"}
           Cantidad: {transaccion?.cantidad} uds{"\n"}
@@ -215,7 +217,7 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
           <input name="password_confirm" type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
         </label>
         <div className="modal-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "16px" }}>
-          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? "Revertindo..." : "Confirmar reversión"}</button>
+          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? (esRestaurar ? "Restaurando..." : "Revertindo...") : (esRestaurar ? "Confirmar restauración" : "Confirmar reversión")}</button>
           <button onClick={() => { setPassword(""); setMotivo(""); setError(""); onCancel(); }}>Cancelar</button>
         </div>
       </div>
@@ -263,13 +265,14 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     setSaleToDelete(null);
   }
 
-  async function confirmRevert(movimientoId, password, motivo) {
+  async function confirmRevert(movimientoId, password, motivo, esRestaurar) {
     try {
-      const result = await api(token, `/transacciones/${movimientoId}/revertir`, {
+      const endpoint = esRestaurar ? `/transacciones/${movimientoId}/restaurar` : `/transacciones/${movimientoId}/revertir`;
+      const result = await api(token, endpoint, {
         method: "POST",
         body: JSON.stringify({ password, motivo: motivo || undefined })
       });
-      setMessage(result.message || "Transaccion revertida correctamente");
+      setMessage(result.message || (esRestaurar ? "Transaccion restaurada correctamente" : "Transaccion revertida correctamente"));
       setTimeout(() => setMessage(""), 5000);
       setRevertTarget(null);
       setReloadKey(k => k + 1);
@@ -365,8 +368,8 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
           {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
-          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} />}
-          {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} />}
+          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-warning" />}
+          {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} className="metric-warning" />}
         </section>
       )}
 
@@ -442,8 +445,8 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   );
 }
 
-function Metric({ icon, label, value }) {
-  return <div className="metric">{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
+function Metric({ icon, label, value, className }) {
+  return <div className={"metric" + (className ? " " + className : "")}>{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
 }
 
 function ProductForm({ token, onDone }) {
@@ -1073,8 +1076,8 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
                             </span>
                           </div>
                           <span className="stock-col">{t.cantidad} uds</span>
-                          {canRevert && !t.revertida && (
-                            <button className="danger revert-btn" onClick={() => onRevert(t)} title="Revertir transaccion">Revertir</button>
+                          {canRevert && (
+                            <button className={"danger revert-btn" + (t.revertida ? " restore-btn" : "")} onClick={() => onRevert(t)} title={t.revertida ? "Restaurar transaccion" : "Revertir transaccion"}>{t.revertida ? "Restaurar" : "Revertir"}</button>
                           )}
                         </div>
                       ))}
