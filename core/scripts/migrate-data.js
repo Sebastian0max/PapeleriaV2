@@ -216,10 +216,17 @@ for (const sa of sqlAudit) {
     if (sa.valor_anterior) detalle.valor_anterior = sa.valor_anterior;
     if (sa.valor_nuevo) detalle.valor_nuevo = sa.valor_nuevo;
     if (sa.detalle) detalle.detalle_original = sa.detalle;
+    let mappedId = null;
+    if (sa.entidad_id) {
+      if (sa.entidad === 'producto') mappedId = idMap.productos.get(sa.entidad_id);
+      else if (sa.entidad === 'movimiento') mappedId = idMap.movimientos.get(sa.entidad_id);
+      else if (sa.entidad === 'usuario') mappedId = idMap.users.get(sa.entidad_id);
+      if (!mappedId) mappedId = idMap.productos.get(sa.entidad_id) || idMap.movimientos.get(sa.entidad_id) || idMap.users.get(sa.entidad_id);
+    }
     await q(
       `INSERT INTO audit_log (tenant_id, user_id, accion, entidad, entidad_id, detalle, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [TENANT_ID, userId, sa.accion, sa.entidad, String(sa.entidad_id),
+      [TENANT_ID, userId, sa.accion, sa.entidad, mappedId,
        Object.keys(detalle).length > 0 ? JSON.stringify(detalle) : null, sa.fecha_hora]
     );
   }
