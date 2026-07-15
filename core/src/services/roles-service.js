@@ -16,7 +16,10 @@ async function listRolesPostgres(client, tenantId) {
 
 async function listPermissionsPostgres(client) {
   const { rows } = await client.query('SELECT * FROM permisos ORDER BY codigo');
-  return rows;
+  return rows.map(r => {
+    const [modulo, accion] = r.codigo.split('_');
+    return { id: r.id, modulo, accion, descripcion: r.descripcion };
+  });
 }
 
 async function createRolePostgres(client, tenantId, { nombre, permisos }) {
@@ -25,9 +28,10 @@ async function createRolePostgres(client, tenantId, { nombre, permisos }) {
     [tenantId, nombre]
   );
   if (permisos && permisos.length > 0) {
+    const dbCodes = permisos.map(k => k.replace(':', '_'));
     const permRows = await client.query(
       `SELECT id FROM permisos WHERE codigo = ANY($1)`,
-      [permisos]
+      [dbCodes]
     );
     for (const perm of permRows.rows) {
       await client.query(
@@ -54,9 +58,10 @@ async function updateRolePostgres(client, tenantId, id, { nombre, permisos }) {
       'DELETE FROM rol_permisos WHERE rol_id = $1 AND tenant_id = $2',
       [id, tenantId]
     );
+    const dbCodes = permisos.map(k => k.replace(':', '_'));
     const permRows = await client.query(
       `SELECT id FROM permisos WHERE codigo = ANY($1)`,
-      [permisos]
+      [dbCodes]
     );
     for (const perm of permRows.rows) {
       await client.query(

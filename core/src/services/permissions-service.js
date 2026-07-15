@@ -83,5 +83,5 @@ export async function listUserPermissionsPostgres(client, tenantId, userId) {
      WHERE u.id = $1 AND u.tenant_id = $2`,
     [userId, tenantId]
   );
-  return rows.map(r => r.codigo);
+  return rows.map(r => r.codigo.replace('_', ':'));
 }
