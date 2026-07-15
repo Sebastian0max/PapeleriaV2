@@ -259,6 +259,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       setMessage(result.message || "Venta eliminada");
       setTimeout(() => setMessage(""), 5000);
       load();
+      setReloadKey(k => k + 1);
     } catch (err) {
       setError(err.message);
     }
@@ -399,7 +400,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <div className="panel-head">
               <h2>Vender</h2>
             </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
+            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => { load(); setReloadKey(k => k + 1); }} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
