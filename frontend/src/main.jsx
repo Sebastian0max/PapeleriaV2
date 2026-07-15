@@ -995,12 +995,13 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
 
     try {
       const data = await api(token, `/transacciones?${query.toString()}`);
+       const txns = data.transactions || data;
       if (isAppend) {
-        setTransactions(prev => [...prev, ...data.transactions]);
+        setTransactions(prev => [...prev, ...txns]);
       } else {
-        setTransactions(data.transactions);
+        setTransactions(txns);
       }
-      setHasMore(data.transactions.length === 50);
+      setHasMore(txns.length === 50);
       if (!isAppend) setPage(1);
       else setPage(p => p + 1);
     } catch (err) {

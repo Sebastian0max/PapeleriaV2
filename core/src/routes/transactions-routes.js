@@ -20,7 +20,7 @@ const revertSchema = z.object({
 export async function transactionsRoutes(app) {
   app.get("/", { preHandler: [app.requirePermission("reportes", "ver")] }, async (request) => {
     const query = querySchema.parse(request.query);
-    return await listTransactions(query, { client: request.client, tenantId: request.tenantId });
+    return { transactions: await listTransactions(query, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/:id/revertir", { preHandler: [app.requirePermission("ventas", "eliminar")] }, async (request) => {
