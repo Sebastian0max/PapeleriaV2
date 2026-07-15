@@ -1,6 +1,6 @@
 import { getDb } from "../db/connection.js";
 
-// ÔöÇÔöÇ Postgres helpers ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// â”€â”€ Postgres helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getStockReportPostgres(client, tenantId) {
   const { rows: [base] } = await client.query(
@@ -107,32 +107,56 @@ async function getStockReportPostgres(client, tenantId) {
 }
 
 async function getProfitReportPostgres(client, tenantId, periodo) {
-  const days = periodo === "dia" ? 1 : periodo === "semana" ? 7 : 30;
-  const { rows } = await client.query(
-    `SELECT COALESCE(SUM(vd.subtotal - (vd.cantidad * p.precio_compra)), 0) AS ganancia_total
-     FROM ventas_detalle vd
-     JOIN productos p ON p.id = vd.producto_id
-     JOIN ventas v ON v.id = vd.venta_id
-     WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - ($2 || ' days')::INTERVAL AND v.estatus = 'completada'`,
-    [tenantId, days]
-  );
-  return rows[0];
+  let periodFilter;
+  if (periodo === "dia") {
+    periodFilter = "v.created_at >= CURRENT_DATE AND v.created_at < CURRENT_DATE + INTERVAL '1 day'";
+  } else if (periodo === "semana") {
+    periodFilter = "v.created_at >= date_trunc('week', CURRENT_DATE) AND v.created_at < date_trunc('week', CURRENT_DATE) + INTERVAL '7 days'";
+  } else {
+    periodFilter = "v.created_at >= date_trunc('month', CURRENT_DATE) AND v.created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'";
+  }
+  const [products, totals] = await Promise.all([
+    client.query(`
+      SELECT p.id, p.nombre, p.costo, p.precio,
+        (p.precio - p.costo) AS ganancia_unitaria,
+        CASE WHEN p.precio > 0 THEN ROUND(((p.precio - p.costo) * 100.0 / p.precio)::NUMERIC, 1) ELSE 0 END AS margen,
+        COALESCE(SUM(vd.cantidad), 0) AS unidades_vendidas,
+        COALESCE(SUM(vd.subtotal - (vd.cantidad * p.costo)), 0) AS ganancia_total
+      FROM productos p
+      LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id
+      LEFT JOIN ventas v ON v.id = vd.venta_id AND v.estatus != 'revertida' AND ${periodFilter}
+      WHERE p.tenant_id = $1 AND p.activo = TRUE AND p.en_papelera = FALSE
+      GROUP BY p.id ORDER BY ganancia_total DESC
+    `, [tenantId]),
+    client.query(`
+      SELECT
+        COALESCE(SUM(vd.subtotal - (vd.cantidad * p.costo)), 0) AS ganancia_total,
+        COALESCE(SUM(v.total), 0) AS ingresos
+      FROM productos p
+      LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id
+      LEFT JOIN ventas v ON v.id = vd.venta_id AND v.estatus != 'revertida' AND ${periodFilter}
+      WHERE p.tenant_id = $1 AND p.activo = TRUE AND p.en_papelera = FALSE
+    `, [tenantId])
+  ]);
+  return { products: products.rows, totalGanancia: Number(totals.rows[0].ganancia_total), totalIngresos: Number(totals.rows[0].ingresos) };
 }
 
 async function getProfitEvolutionPostgres(client, tenantId) {
   const { rows } = await client.query(
-    `SELECT DATE(v.created_at) AS dia, COALESCE(SUM(vd.subtotal - (vd.cantidad * p.precio_compra)), 0) AS ganancia
+    `SELECT DATE(v.created_at) AS dia,
+            COALESCE(SUM(vd.subtotal - (vd.cantidad * p.costo)), 0) AS ganancia,
+            COALESCE(SUM(v.total), 0) AS ingresos
      FROM ventas_detalle vd
-     JOIN productos p ON p.id = vd.producto_id
      JOIN ventas v ON v.id = vd.venta_id
-     WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - INTERVAL '30 days' AND v.estatus = 'completada'
+     JOIN productos p ON p.id = vd.producto_id
+     WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - INTERVAL '30 days' AND v.estatus != 'revertida'
      GROUP BY DATE(v.created_at) ORDER BY dia`,
     [tenantId]
   );
-  return rows;
+  return fillEvolutionDays(rows);
 }
 
-// ÔöÇÔöÇ Exported functions (dual-mode) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// â”€â”€ Exported functions (dual-mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function getStockReport({ client, tenantId } = {}) {
   if (client) return getStockReportPostgres(client, tenantId);
@@ -189,21 +213,61 @@ export function getStockReport({ client, tenantId } = {}) {
 
 export function getProfitReport(periodo = "mes", { client, tenantId } = {}) {
   if (client) return getProfitReportPostgres(client, tenantId, periodo);
-  const rango = periodo === "dia" ? 1 : periodo === "semana" ? 7 : 30;
-  const rows = getDb().prepare(`
-    SELECT COALESCE(SUM((v.precio_unitario - p.costo) * v.cantidad), 0) AS ganancia_total
-    FROM ventas v JOIN productos p ON p.id = v.producto_id
-    WHERE v.anulada = 0 AND julianday('now') - julianday(v.fecha) <= ?
-  `).all(rango);
-  return rows[0] || { ganancia_total: 0 };
+  const db = getDb();
+  let periodFilter;
+  if (periodo === "dia") {
+    periodFilter = "date(v.fecha) = date('now', 'localtime')";
+  } else if (periodo === "semana") {
+    periodFilter = "strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')";
+  } else {
+    periodFilter = "strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')";
+  }
+  const products = db.prepare(`
+    SELECT p.id, p.nombre, p.costo, p.precio,
+      (p.precio - p.costo) AS ganancia_unitaria,
+      CASE WHEN p.precio > 0 THEN ROUND(CAST((p.precio - p.costo) AS REAL) * 100.0 / p.precio, 1) ELSE 0 END AS margen,
+      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN v.cantidad ELSE 0 END), 0) AS unidades_vendidas,
+      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN (p.precio - p.costo) * v.cantidad ELSE 0 END), 0) AS ganancia_total
+    FROM productos p
+    LEFT JOIN ventas v ON v.producto_id = p.id
+    WHERE p.activo = 1 AND p.en_papelera = 0
+    GROUP BY p.id ORDER BY ganancia_total DESC
+  `).all();
+  const totals = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN (p.precio - p.costo) * v.cantidad ELSE 0 END), 0) AS ganancia_total,
+      COALESCE(SUM(CASE WHEN v.anulada = 0 AND ${periodFilter} THEN v.total ELSE 0 END), 0) AS ingresos
+    FROM productos p
+    LEFT JOIN ventas v ON v.producto_id = p.id
+    WHERE p.activo = 1 AND p.en_papelera = 0
+  `).get();
+  return { products, totalGanancia: totals.ganancia_total, totalIngresos: totals.ingresos };
+}
+
+function fillEvolutionDays(rows) {
+  const map = {};
+  for (const r of rows) map[r.dia] = r;
+  const days = [];
+  const now = new Date();
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    const existing = map[key];
+    days.push({ dia: key, ganancia: existing ? existing.ganancia : 0, ingresos: existing ? existing.ingresos : 0 });
+  }
+  return days;
 }
 
 export function getProfitEvolution({ client, tenantId } = {}) {
   if (client) return getProfitEvolutionPostgres(client, tenantId);
-  return getDb().prepare(`
-    SELECT DATE(v.fecha) AS dia, SUM((v.precio_unitario - p.costo) * v.cantidad) AS ganancia
+  const rows = getDb().prepare(`
+    SELECT DATE(v.fecha) AS dia,
+      COALESCE(SUM(CASE WHEN v.anulada = 0 THEN (p.precio - p.costo) * v.cantidad ELSE 0 END), 0) AS ganancia,
+      COALESCE(SUM(CASE WHEN v.anulada = 0 THEN v.total ELSE 0 END), 0) AS ingresos
     FROM ventas v JOIN productos p ON p.id = v.producto_id
-    WHERE v.anulada = 0 AND julianday('now') - julianday(v.fecha) <= 30
+    WHERE julianday('now') - julianday(v.fecha) <= 30
     GROUP BY DATE(v.fecha) ORDER BY dia
   `).all();
+  return fillEvolutionDays(rows);
 }
