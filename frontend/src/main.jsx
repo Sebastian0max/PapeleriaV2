@@ -185,12 +185,12 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
     }
     setBusy(true);
     setError("");
-    const ok = await onConfirm(transaccion.id, password, motivo, esRestaurar);
-    if (ok) {
+    const result = await onConfirm(transaccion.id, password, motivo, esRestaurar);
+    if (result.ok) {
       setPassword("");
       setMotivo("");
     } else {
-      setError("Contraseña incorrecta. Intenta de nuevo.");
+      setError(result.error || "No se pudo completar la operación. Verifica la contraseña e intenta de nuevo.");
     }
     setBusy(false);
   }
@@ -277,10 +277,9 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       setRevertTarget(null);
       setReloadKey(k => k + 1);
       load();
-      return true;
+      return { ok: true };
     } catch (err) {
-      setError(err.message);
-      return false;
+      return { ok: false, error: err.message };
     }
   }
 
