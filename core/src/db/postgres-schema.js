@@ -19,19 +19,14 @@ CREATE TABLE IF NOT EXISTS productos (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL,
   codigo VARCHAR(100),
-  sku VARCHAR(100),
-  codigo_barras VARCHAR(100),
   nombre VARCHAR(255) NOT NULL,
-  nombre_normalizado VARCHAR(255),
-  categoria VARCHAR(100),
+  descripcion TEXT,
   precio_compra DECIMAL(12,2) NOT NULL DEFAULT 0,
   precio_venta DECIMAL(12,2) NOT NULL DEFAULT 0,
   stock DECIMAL(12,2) NOT NULL DEFAULT 0,
   stock_minimo DECIMAL(12,2) NOT NULL DEFAULT 0,
+  unidad VARCHAR(50) DEFAULT 'pieza',
   activo BOOLEAN NOT NULL DEFAULT TRUE,
-  en_papelera BOOLEAN NOT NULL DEFAULT FALSE,
-  fecha_eliminacion TIMESTAMPTZ,
-  eliminado_por UUID REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -67,8 +62,6 @@ CREATE TABLE IF NOT EXISTS roles (
   tenant_id UUID NOT NULL,
   nombre VARCHAR(100) NOT NULL,
   descripcion TEXT,
-  es_sistema BOOLEAN NOT NULL DEFAULT FALSE,
-  activo BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(tenant_id, nombre)
@@ -148,10 +141,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   monto DECIMAL(12,2) NOT NULL,
   forma_pago VARCHAR(50),
   descripcion TEXT,
-  user_id UUID REFERENCES users(id),
-  revertida BOOLEAN NOT NULL DEFAULT FALSE,
-  revertida_por UUID REFERENCES users(id),
-  motivo_reversion TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

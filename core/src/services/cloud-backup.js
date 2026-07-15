@@ -24,13 +24,17 @@ function storageUrl(objectPath) {
   return `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`;
 }
 
+function publicUrl(objectPath) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${objectPath}`;
+}
+
 async function ensureBucket() {
   const res = await fetch(`${SUPABASE_URL}/storage/v1/bucket/${BUCKET}`, { headers: supabaseHeaders() });
   if (res.ok) return;
   const create = await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
     method: "POST",
     headers: { ...supabaseHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ id: BUCKET, name: BUCKET, public: false })
+    body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true })
   });
   if (!create.ok) { const text = await create.text(); console.error("[cloud-backup] Could not create bucket:", text); }
 }
@@ -92,4 +96,16 @@ export async function flushOnShutdown() {
   console.log("[cloud-backup] Shutdown flush complete.");
 }
 
+export async function uploadImage(fileName, buffer, mimeType) {
+  if (!syncEnabled) return null;
+  const objectPath = `productos/${fileName}`;
+  const res = await fetch(storageUrl(objectPath), {
+    method: "POST",
+    headers: { ...supabaseHeaders(), "Content-Type": mimeType, "x-upsert": "true" },
+    body: buffer
+  });
+  if (!res.ok) { console.error("[cloud-backup] Image upload failed:", res.status, await res.text()); return null; }
+  return publicUrl(objectPath);
+}
 
+export function isCloudEnabled() { return syncEnabled; }

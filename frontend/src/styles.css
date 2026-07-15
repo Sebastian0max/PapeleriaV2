@@ -181,13 +181,6 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .sale-alert { grid-column: 1 / -1; padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); font-weight: 700; font-size: var(--fs-sm); background: var(--stock-low-bg); border: 1px solid var(--stock-low-border); color: var(--stock-low-text); }
 
 /* Dashboard stock alert */
-.dashboard-stock-alert {
-  grid-column: 1 / -1; padding: 10px var(--space-lg); border-radius: var(--radius-sm);
-  background: var(--stock-low-bg); border: 1px solid var(--stock-low-border);
-  color: var(--stock-low-text); font-weight: 700; font-size: var(--fs-sm);
-  display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-lg);
-}
-
 /* Toast messages */
 .toast { grid-column: 1 / -1; padding: 10px var(--space-lg); border-radius: var(--radius-sm); font-weight: 700; font-size: var(--fs-sm); animation: fadeIn 0.3s ease; }
 .toast.success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
@@ -202,7 +195,7 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 /* Product row grid */
 .product-row { display: grid; grid-template-columns: minmax(220px, 1fr) 90px auto; }
 .product-title { display: flex !important; align-items: center; gap: 10px; }
-.product-title img, .thumb { width: 42px; height: 42px; border-radius: var(--radius-sm); object-fit: cover; background: var(--tab-bg); flex: 0 0 auto; }
+.product-title img { width: 42px; height: 42px; border-radius: var(--radius-sm); object-fit: cover; background: var(--tab-bg); flex: 0 0 auto; }
 .product-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .product-title span { color: var(--text-secondary); font-size: var(--fs-sm); }
 
@@ -216,7 +209,6 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .product-row-edit .edit-fields { display: flex; gap: var(--space-sm); flex: 1; min-width: 0; align-items: end; }
 .product-row-edit .edit-fields input { min-width: 0; width: auto; flex: 1; }
 .product-row-edit .edit-fields label { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary); flex: 1; min-width: 0; }
-.label-help { font-weight: 400; font-size: 10px; color: var(--text-secondary); opacity: 0.8; display: block; min-height: 1.2em; }
 
 /* Modals */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--modal-overlay); display: flex; align-items: center; justify-content: center; z-index: 1000; }

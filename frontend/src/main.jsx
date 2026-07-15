@@ -16,7 +16,8 @@ import {
   Upload,
   Users,
   RotateCcw,
-  Clock
+  Clock,
+  AlertTriangle
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import "./styles.css";
@@ -142,8 +143,8 @@ function Login({ onLogin }) {
       <form className="login-panel" onSubmit={submit}>
         <Boxes size={40} />
         <h1>Sistema Papeleria</h1>
-        <label>Usuario<input placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
-        <label>Password<input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+        <label>Usuario<input name="usuario" placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
+        <label>Password<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <p className="error">{error}</p>}
         <button>Entrar</button>
       </form>
@@ -207,11 +208,11 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
         {error && <p className="error" style={{ margin: "8px 0" }}>{error}</p>}
         <label>
           Motivo (opcional)
-          <input placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+          <input name="motivo" placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
         </label>
         <label style={{ marginTop: "8px" }}>
           Contraseña de administrador
-          <input type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <input name="password_confirm" type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
         </label>
         <div className="modal-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "16px" }}>
           <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? "Revertindo..." : "Confirmar reversión"}</button>
@@ -364,19 +365,9 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
           {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
+          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} />}
+          {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} />}
         </section>
-      )}
-
-      {view !== "config" && report && (report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
-        <div className="dashboard-stock-alert">
-          <span>⚠️</span>
-          <span>
-            {report.agotados?.length > 0 && <strong>{report.agotados.length} agotado(s)</strong>}
-            {report.agotados?.length > 0 && report.bajoStock?.length > 0 && " - "}
-            {report.bajoStock?.length > 0 && <strong>{report.bajoStock.length} con stock bajo</strong>}
-            {" - Revisa el panel de Stock para más detalles."}
-          </span>
-        </div>
       )}
 
       {view === "inventario" && (
@@ -384,7 +375,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+              <div className="search"><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
             </div>
             {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
@@ -477,10 +468,10 @@ function ProductForm({ token, onDone }) {
 
   return (
     <form className="product-form" onSubmit={submit}>
-      <label>Nombre del producto<input required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
-      <label>Cantidad en stock<input required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
-      <label>Precio de costo<input type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /><small className="label-help">lo que pagaste por cada unidad</small></label>
-      <label>Precio de venta<input required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /><small className="label-help">lo que cobras al cliente</small></label>
+      <label>Nombre del producto<input name="nombre" required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
+      <label>Cantidad en stock<input name="cantidad_stock" required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
+      <label>Precio de costo<input name="costo" type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
+      <label>Precio de venta<input name="precio" required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
       <button title="Agregar producto"><PackagePlus size={18} /></button>
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) >= Number(form.precio) && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0 }}>⚠️ El precio de venta es menor o igual al costo. ¡Estás vendiendo a pérdida!</span>}
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) < Number(form.precio) && (Number(form.precio) - Number(form.costo)) / Number(form.precio) < 0.1 && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0, background: "var(--warning-bg)", borderColor: "var(--warning-border)" }}>⚠️ Margen menor al 10%. Considera aumentar el precio de venta.</span>}
@@ -535,10 +526,10 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     return (
       <div className="row product-row-edit">
         <div className="edit-fields">
-          <label>Nombre<input value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
-          <label>Stock<input type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
-          <label>Costo<input type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /><small className="label-help">lo que pagaste</small></label>
-          <label>Venta<input type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /><small className="label-help">lo que cobras</small></label>
+          <label>Nombre<input name="edit-nombre" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
+          <label>Stock<input name="edit-stock" type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
+          <label>Costo<input name="edit-costo" type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
+          <label>Venta<input name="edit-precio" type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
         </div>
         <div className="actions">
           <button onClick={saveEdit}>Guardar</button>
@@ -554,7 +545,6 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
   return (
     <div className="row product-row">
       <div className="product-title">
-        {product.thumbnail_url ? <img src={product.thumbnail_url.startsWith("http") ? product.thumbnail_url : `${API_URL.replace(/[\/\\]+$/, '')}${normalizePath(product.thumbnail_url)}`} alt="" /> : <span className="thumb" />}
         <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
       </div>
       <span className="stock-col">{product.cantidad_stock} uds</span>
@@ -630,7 +620,7 @@ function SaleForm({ token, products, onDone }) {
     <form className="sale-form" onSubmit={submit}>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-      <select value={productoId} onChange={(e) => setProductoId(Number(e.target.value))}>
+      <select name="producto_id" value={productoId} onChange={(e) => setProductoId(Number(e.target.value))}>
         <option value={0}>Producto</option>
         {products.map((product) => (
           <option key={product.id} value={product.id}>
@@ -644,7 +634,7 @@ function SaleForm({ token, products, onDone }) {
           <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
         </div>
       )}
-      <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
+      <input name="cantidad" type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
       <button title="Vender" disabled={busy}>
         <ShoppingCart size={18} />
       </button>
@@ -794,7 +784,7 @@ function ImportPanel({ token, onImported }) {
         <button className="link-button" type="button" onClick={downloadTemplate}><Download size={17} />Plantilla</button>
       </div>
       <form className="upload-line" onSubmit={importFile}>
-        <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <input name="import-file" type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
         <button disabled={busy || !file}><Upload size={17} />{busy ? "Importando" : "Importar"}</button>
       </form>
       {message && <p className="success">{message}</p>}
@@ -860,9 +850,9 @@ function UsersPanel({ token }) {
     <div className="panel">
       <h2>Usuarios</h2>
       <form className="user-form" onSubmit={create}>
-        <input placeholder="Usuario" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />
-        <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        <select value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
+        <input name="user-usuario" placeholder="Usuario" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />
+        <input name="user-password" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <select name="user-rol_id" value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
         <button>Crear</button>
       </form>
       <div className="table">{users.map((user) => <div className="row" key={user.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px auto", alignItems: "center" }}><div><strong>{user.usuario}</strong><span className="muted">{user.rol}</span></div><span>{user.activo ? "Activo" : "Inactivo"}</span><button className="danger" onClick={() => deactivate(user.id)}>Desactivar</button></div>)}</div>
@@ -906,10 +896,10 @@ function RolesPanel({ token }) {
       <div className="role-layout">
         <div className="role-list">{roles.map((role) => <button className={selected?.id === role.id ? "active" : ""} onClick={() => setSelected(role)} key={role.id}>{role.nombre}</button>)}</div>
         {selected && <div className="permissions">
-          <input value={selected.nombre} onChange={(e) => setSelected({ ...selected, nombre: e.target.value })} />
+          <input name="rol-nombre" value={selected.nombre} onChange={(e) => setSelected({ ...selected, nombre: e.target.value })} />
           {modules.map((modulo) => <div className="perm-row" key={modulo}><strong>{modulo}</strong>{ACTIONS.map((accion) => {
             const key = `${modulo}:${accion}`;
-            return <label key={key}><input type="checkbox" checked={(selected.permisos || []).includes(key)} onChange={() => toggle(key)} />{accion}</label>;
+            return <label key={key}><input name={"perm-"+key} type="checkbox" checked={(selected.permisos || []).includes(key)} onChange={() => toggle(key)} />{accion}</label>;
           })}</div>)}
           <button onClick={save}>Guardar rol</button>
         </div>}
@@ -931,9 +921,9 @@ function ImportLogPanel({ token }) {
     <div className="panel">
       <h2>Bitacora de importaciones</h2>
       <div className="filters">
-        <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} />
-        <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} />
-        <input placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
+        <input name="log-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} />
+        <input name="log-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} />
+        <input name="log-producto" placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={load}>Filtrar</button>
       </div>
       <div className="table">{logs.map((log) => <div className="row" key={log.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 160px", alignItems: "center" }}><div><strong>{log.producto_nombre}</strong><span className="muted">{log.archivo_origen} - {log.usuario_admin}</span></div><span>{log.tipo_cambio}</span><span className="muted">{log.fecha_hora}</span></div>)}</div>
@@ -1038,15 +1028,15 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
     { value: "entrada", label: "Entradas", color: "#166534" },
     { value: "salida", label: "Salidas", color: "#991b1b" },
     { value: "ajuste", label: "Ajustes", color: "#92400e" },
-    { value: "revertida", label: "Revertidas", color: "#64748b" }
+    { value: "revertida", label: "Canceladas", color: "#64748b" }
   ];
 
   return (
     <div className="transactions-list">
       <div className="transactions-filters">
-        <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
-        <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
-        <input placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
+        <input name="tx-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
+        <input name="tx-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
+        <input name="tx-producto" placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={() => load(false)}>Filtrar</button>
       </div>
 

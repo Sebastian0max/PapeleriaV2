@@ -12,7 +12,7 @@ function mapTransactionRow(row) {
     usuario_id: row.user_id,
     fecha: row.created_at,
     nota: row.descripcion,
-    revertida: 0,
+    revertida: row.revertida ? 1 : 0,
     producto_nombre: row.producto_nombre || null,
   };
 }
@@ -33,6 +33,11 @@ async function listTransactionsPostgres(client, tenantId, query = {}) {
   if (query.tipo) {
     sql += ` AND t.tipo = $${idx++}`;
     params.push(query.tipo);
+  }
+  if (query.revertida === "0") {
+    sql += ` AND (t.revertida IS NULL OR t.revertida = 0)`;
+  } else if (query.revertida === "1") {
+    sql += ` AND t.revertida = 1`;
   }
 
   sql += ` ORDER BY t.created_at DESC LIMIT $${idx++}`;
@@ -64,7 +69,7 @@ async function revertTransactionPostgres(client, tenantId, { movimientoId, usuar
 
 export function listTransactions(query = {}, { client, tenantId } = {}) {
   if (client) return listTransactionsPostgres(client, tenantId, query);
-  const { limit = 50, offset = 0, fechaDesde, fechaHasta, tipo } = query;
+  const { limit = 50, offset = 0, fechaDesde, fechaHasta, tipo, revertida } = query;
   let sql = `
     SELECT m.*, p.nombre AS producto_nombre
     FROM movimientos m
@@ -75,6 +80,11 @@ export function listTransactions(query = {}, { client, tenantId } = {}) {
   if (fechaDesde) { sql += " AND m.fecha >= ?"; params.push(fechaDesde); }
   if (fechaHasta) { sql += " AND m.fecha <= ?"; params.push(fechaHasta); }
   if (tipo) { sql += " AND m.tipo = ?"; params.push(tipo); }
+  if (revertida === "0") {
+    sql += " AND (m.revertida IS NULL OR m.revertida = 0)";
+  } else if (revertida === "1") {
+    sql += " AND m.revertida = 1";
+  }
   sql += " ORDER BY m.fecha DESC LIMIT ? OFFSET ?";
   params.push(Number(limit), Number(offset));
   return getDb().prepare(sql).all(...params);
@@ -111,4 +121,36 @@ export function revertTransaction({ movimientoId, usuarioId, motivo }, { client,
     throw error;
   }
   return { reverted: true };
+}
+
+export function purgeOldCanceled(days = 7) {
+  const db = getDb();
+  const old = db.prepare(`
+    SELECT m.*, p.nombre AS producto_nombre
+    FROM movimientos m
+    LEFT JOIN productos p ON p.id = m.producto_id
+    WHERE m.revertida = 1 AND m.en_papelera = 0
+    AND julianday('now') - julianday(m.fecha) >= ?
+  `).all(days);
+  const count = old.length;
+  if (count > 0) {
+    const insertAudit = db.prepare(`
+      INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
+      VALUES (0, 'movimiento', ?, 'purga_auto', ?)
+    `);
+    const deleteMov = db.prepare("DELETE FROM movimientos WHERE id = ?");
+    for (const mov of old) {
+      const detalle = JSON.stringify({
+        tipo: mov.tipo,
+        producto: mov.producto_nombre || mov.producto_id,
+        cantidad: mov.cantidad,
+        fecha: mov.fecha,
+        revertida_por: mov.revertida_por,
+        motivo_reversion: mov.motivo_reversion
+      });
+      insertAudit.run(mov.id, detalle);
+      deleteMov.run(mov.id);
+    }
+  }
+  return { purged: count };
 }

@@ -33,7 +33,7 @@ export async function hasPermissionPostgres(client, tenantId, userId, modulo, ac
      JOIN users u ON u.rol_id = rp.rol_id
      WHERE u.id = $1 AND u.tenant_id = $2 AND rp.tenant_id = $2
        AND p.codigo = $3`,
-    [userId, tenantId, `${modulo}_${accion}`]
+    [userId, tenantId, `${modulo}:${accion}`]
   );
   return rows.length > 0;
 }
@@ -73,15 +73,4 @@ export function listUserPermissions(userId) {
     JOIN usuarios u ON u.rol_id = r.id
     WHERE u.id = ?
   `).all(userId).map(r => r.permiso);
-}
-
-export async function listUserPermissionsPostgres(client, tenantId, userId) {
-  const { rows } = await client.query(
-    `SELECT p.codigo FROM permisos p
-     JOIN rol_permisos rp ON rp.permiso_id = p.id
-     JOIN users u ON u.rol_id = rp.rol_id
-     WHERE u.id = $1 AND u.tenant_id = $2`,
-    [userId, tenantId]
-  );
-  return rows.map(r => r.codigo.replace('_', ':'));
 }

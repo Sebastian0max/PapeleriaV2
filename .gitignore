@@ -9,3 +9,55 @@ dist
 uploads/productos
 data/
 .vercel/
+
+# Windows personal folders (case-insensitive FS, so match all variants)
+[Dd]ocuments/
+[Dd]ownloads/
+[Dd]esktop/
+[Ee]scritorio/
+[Pp]ictures/
+[Mm]usic/
+[Vv]ideos/
+[Ff]avorites/
+[Ll]inks/
+[Cc]ontacts/
+[Ss]aved [Gg]ames/
+[Ss]earches/
+[Oo]ne[Dd]rive/
+3D Objects/
+[Aa]pp[Dd]ata/
+[Ii]ntel[Gg]raphics[Pp]rofiles/
+[Mm]use [Hh]ub/
+[Vv]irtual[Bb]ox [Vv]Ms/
+ntuser.dat*
+NTUSER.DAT*
+
+# Dev/config directories
+.cache/
+.config/
+.local/
+.vscode/
+.wsl/
+.android/
+.antigravity/
+.antigravity-ide/
+.claude/
+.claude.json
+.codex/
+.continue/
+.cursor/
+.fly/
+.gemini/
+.ollama/
+.ueli/
+.m2/
+.ipython/
+.jupyter/
+.lesshst
+.gitconfig
+code/
+mi-api/
+pseint/
+wsl/
+*.bat
+*.mjs
