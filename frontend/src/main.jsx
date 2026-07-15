@@ -4,7 +4,6 @@ import {
   Boxes,
   Download,
   FileText,
-  ImagePlus,
   LogOut,
   Moon,
   PackagePlus,
@@ -459,8 +458,6 @@ function Metric({ icon, label, value }) {
 function ProductForm({ token, onDone }) {
   const empty = { nombre: "", cantidad_stock: "", precio: "", costo: "" };
   const [form, setForm] = useState(empty);
-  const [image, setImage] = useState(null);
-
   async function submit(event) {
     event.preventDefault();
     const payload = {
@@ -473,14 +470,8 @@ function ProductForm({ token, onDone }) {
       sku: "",
       categoria: ""
     };
-    const data = await api(token, "/productos", { method: "POST", body: JSON.stringify(payload) });
-    if (image) {
-      const fd = new FormData();
-      fd.append("file", image);
-      await api(token, `/productos/${data.product.id}/imagen`, { method: "POST", body: fd });
-    }
+    await api(token, "/productos", { method: "POST", body: JSON.stringify(payload) });
     setForm(empty);
-    setImage(null);
     onDone();
   }
 
@@ -488,9 +479,8 @@ function ProductForm({ token, onDone }) {
     <form className="product-form" onSubmit={submit}>
       <label>Nombre del producto<input required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
       <label>Cantidad en stock<input required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
-      <label>Precio de costo <small>lo que pagaste por cada unidad</small><input type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
-      <label>Precio de venta <small>lo que cobras al cliente</small><input required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
-      <label className="file-button" title="Imagen"><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
+      <label>Precio de costo<input type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /><small className="label-help">lo que pagaste por cada unidad</small></label>
+      <label>Precio de venta<input required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /><small className="label-help">lo que cobras al cliente</small></label>
       <button title="Agregar producto"><PackagePlus size={18} /></button>
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) >= Number(form.precio) && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0 }}>⚠️ El precio de venta es menor o igual al costo. ¡Estás vendiendo a pérdida!</span>}
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) < Number(form.precio) && (Number(form.precio) - Number(form.costo)) / Number(form.precio) < 0.1 && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0, background: "var(--warning-bg)", borderColor: "var(--warning-border)" }}>⚠️ Margen menor al 10%. Considera aumentar el precio de venta.</span>}
@@ -516,7 +506,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     setEditForm({
       nombre: product.nombre,
       precio: product.precio,
-      costo: product.costo ?? 0,
+      costo: product.costo ?? "",
       cantidad_stock: product.cantidad_stock
     });
     setIsEditing(true);
@@ -547,8 +537,8 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
         <div className="edit-fields">
           <label>Nombre<input value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
           <label>Stock<input type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
-          <label>Costo <small className="label-help">lo que pagaste</small><input type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
-          <label>Venta <small className="label-help">lo que cobras</small><input type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
+          <label>Costo<input type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /><small className="label-help">lo que pagaste</small></label>
+          <label>Venta<input type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /><small className="label-help">lo que cobras</small></label>
         </div>
         <div className="actions">
           <button onClick={saveEdit}>Guardar</button>

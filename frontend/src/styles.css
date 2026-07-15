@@ -166,9 +166,9 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .search input { width: 180px; }
 
 /* Product form */
-.product-form { display: grid; grid-template-columns: 1fr 100px 130px 130px 42px 42px; gap: var(--space-sm); }
+.product-form { display: grid; grid-template-columns: 1fr 100px 130px 130px 42px; gap: var(--space-sm); }
 .product-form label { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--fs-sm); font-weight: 600; color: var(--text); min-width: 0; }
-.product-form label small { font-weight: 400; font-size: var(--fs-xs); color: var(--text-secondary); opacity: 0.85; }
+.product-form label small { font-weight: 400; font-size: var(--fs-xs); color: var(--text-secondary); opacity: 0.85; min-height: 1.2em; display: block; }
 
 /* User / Upload / Filter forms */
 .user-form, .upload-line, .filters { display: grid; grid-template-columns: 1fr 1fr 180px 100px; gap: var(--space-sm); }
@@ -216,11 +216,7 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .product-row-edit .edit-fields { display: flex; gap: var(--space-sm); flex: 1; min-width: 0; align-items: end; }
 .product-row-edit .edit-fields input { min-width: 0; width: auto; flex: 1; }
 .product-row-edit .edit-fields label { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary); flex: 1; min-width: 0; }
-.label-help { font-weight: 400; font-size: 10px; color: var(--text-secondary); opacity: 0.8; }
-
-/* File button */
-.file-button { min-height: var(--btn-h); width: 42px; display: grid; place-items: center; border-radius: var(--radius-sm); background: var(--tab-bg); cursor: pointer; }
-.file-button input { display: none; }
+.label-help { font-weight: 400; font-size: 10px; color: var(--text-secondary); opacity: 0.8; display: block; min-height: 1.2em; }
 
 /* Modals */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--modal-overlay); display: flex; align-items: center; justify-content: center; z-index: 1000; }
@@ -298,9 +294,10 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .tl-month h4 { text-transform: capitalize; color: var(--text-secondary); margin: var(--space-md) 0 var(--space-sm); font-size: var(--fs-base); }
 .tl-day { padding-left: var(--space-md); }
 .tl-day > strong { display: block; margin-bottom: var(--space-sm); color: var(--text-muted); font-size: var(--fs-sm); }
-.tl-transaction { display: grid; grid-template-columns: 70px 80px 1fr 90px auto; gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md); }
+.tl-transaction { display: grid; grid-template-columns: 70px 80px 1fr 90px auto; gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md); min-width: 0; overflow: hidden; }
 .tl-transaction[data-revertida="true"] { background: var(--tab-bg); opacity: 0.7; }
-.revert-btn { min-height: auto; padding: var(--space-xs) var(--space-sm); font-size: var(--fs-xs); }
+.revert-btn { min-height: auto; padding: var(--space-xs) var(--space-sm); font-size: var(--fs-xs); white-space: nowrap; }
+.tl-transaction .badge { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .load-more-btn { width: 100%; padding: var(--space-md); background: var(--tab-bg); color: var(--tab-text); margin-top: var(--space-sm); }
 
 /* Trash panel */
@@ -313,6 +310,7 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .transaction-row-content {
   display: grid; grid-template-columns: 70px 80px 1fr 90px auto;
   gap: var(--space-sm); align-items: center; padding: var(--space-sm) var(--space-md);
+  min-width: 0; overflow: hidden;
 }
 
 /* Responsive */
