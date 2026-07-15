@@ -849,7 +849,7 @@ function UsersPanel({ token }) {
     const [userData, roleData] = await Promise.all([api(token, "/usuarios"), api(token, "/roles")]);
     setUsers(userData.users);
     setRoles(roleData.roles);
-    if (!form.rol_id && roleData.roles[0]) setForm((x) => ({ ...x, rol_id: roleData.roles[0].id }));
+    if (!form.rol_id && roleData.roles?.[0]) setForm((x) => ({ ...x, rol_id: roleData.roles[0].id }));
   }
   useEffect(() => { load(); }, []);
 
@@ -889,7 +889,7 @@ function RolesPanel({ token }) {
     const data = await api(token, "/roles");
     setRoles(data.roles);
     setPermissions(data.permissions);
-    setSelected((current) => current || data.roles[0] || null);
+    setSelected((current) => current || data.roles?.[0] || null);
   }
   useEffect(() => { load(); }, []);
 
@@ -995,7 +995,7 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
 
     try {
       const data = await api(token, `/transacciones?${query.toString()}`);
-       const txns = data.transactions || data;
+      const txns = data.transactions || data;
       if (isAppend) {
         setTransactions(prev => [...prev, ...txns]);
       } else {
