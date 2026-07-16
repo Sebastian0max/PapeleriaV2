@@ -182,21 +182,21 @@ export function getStockReport({ client, tenantId } = {}) {
     productos_bajos: db.prepare("SELECT COUNT(*) AS c FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock <= stock_minimo").get().c,
     agotados: db.prepare("SELECT * FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock = 0 ORDER BY nombre").all(),
     bajoStock: db.prepare("SELECT * FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock <= stock_minimo AND cantidad_stock > 0 ORDER BY cantidad_stock ASC").all(),
-    ventasDia: salesPeriod("date(v.fecha) = date('now', 'localtime')"),
-    ventasSemana: salesPeriod("strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')"),
-    ventasMes: salesPeriod("strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')"),
+    ventasDia: salesPeriod("date(v.fecha, 'localtime') = date('now', 'localtime')"),
+    ventasSemana: salesPeriod("strftime('%W', v.fecha, 'localtime') = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha, 'localtime') = strftime('%Y', 'now', 'localtime')"),
+    ventasMes: salesPeriod("strftime('%Y-%m', v.fecha, 'localtime') = strftime('%Y-%m', 'now', 'localtime')"),
     ventasDiaDetalle: db.prepare(`
       SELECT p.id, p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total
       FROM ventas v JOIN productos p ON p.id = v.producto_id
-      WHERE v.anulada = 0 AND date(v.fecha) = date('now', 'localtime')
+      WHERE v.anulada = 0 AND date(v.fecha, 'localtime') = date('now', 'localtime')
       GROUP BY p.id ORDER BY cantidad DESC
     `).all(),
     menosVendidosSemana: db.prepare(`
       SELECT p.id, p.nombre, p.cantidad_stock, COALESCE(SUM(v.cantidad), 0) AS vendidos
       FROM productos p
       LEFT JOIN ventas v ON v.producto_id = p.id AND v.anulada = 0
-        AND strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime')
-        AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')
+        AND strftime('%W', v.fecha, 'localtime') = strftime('%W', 'now', 'localtime')
+        AND strftime('%Y', v.fecha, 'localtime') = strftime('%Y', 'now', 'localtime')
       WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
       GROUP BY p.id ORDER BY vendidos ASC, p.nombre ASC LIMIT 10
     `).all(),
@@ -204,7 +204,7 @@ export function getStockReport({ client, tenantId } = {}) {
       SELECT p.id, p.nombre, p.cantidad_stock, COALESCE(SUM(v.cantidad), 0) AS vendidos
       FROM productos p
       LEFT JOIN ventas v ON v.producto_id = p.id AND v.anulada = 0
-        AND strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')
+        AND strftime('%Y-%m', v.fecha, 'localtime') = strftime('%Y-%m', 'now', 'localtime')
       WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
       GROUP BY p.id ORDER BY vendidos ASC, p.nombre ASC LIMIT 10
     `).all()
@@ -216,11 +216,11 @@ export function getProfitReport(periodo = "mes", { client, tenantId } = {}) {
   const db = getDb();
   let periodFilter;
   if (periodo === "dia") {
-    periodFilter = "date(v.fecha) = date('now', 'localtime')";
+    periodFilter = "date(v.fecha, 'localtime') = date('now', 'localtime')";
   } else if (periodo === "semana") {
-    periodFilter = "strftime('%W', v.fecha) = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha) = strftime('%Y', 'now', 'localtime')";
+    periodFilter = "strftime('%W', v.fecha, 'localtime') = strftime('%W', 'now', 'localtime') AND strftime('%Y', v.fecha, 'localtime') = strftime('%Y', 'now', 'localtime')";
   } else {
-    periodFilter = "strftime('%Y-%m', v.fecha) = strftime('%Y-%m', 'now', 'localtime')";
+    periodFilter = "strftime('%Y-%m', v.fecha, 'localtime') = strftime('%Y-%m', 'now', 'localtime')";
   }
   const products = db.prepare(`
     SELECT p.id, p.nombre, p.costo, p.precio,

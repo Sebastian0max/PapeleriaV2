@@ -10,7 +10,7 @@ uploads/productos
 data/
 .vercel/
 
-# Windows personal folders (case-insensitive FS, so match all variants)
+# Windows personal folders
 [Dd]ocuments/
 [Dd]ownloads/
 [Dd]esktop/

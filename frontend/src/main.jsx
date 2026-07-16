@@ -662,32 +662,101 @@ function SaleForm({ token, products, onDone }) {
 
 function Report({ report }) {
   if (!report) return null;
+  const RankBadge = ({ i }) => {
+    const cls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "rank-n";
+    return <span className={`rank ${cls}`}>{i + 1}</span>;
+  };
+  const StockBar = ({ current, min }) => {
+    const pct = min > 0 ? Math.round((current / min) * 100) : 0;
+    const cls = pct === 0 ? "critical" : pct < 50 ? "warning" : "ok";
+    return <div className="stock-bar"><div className={`stock-bar-fill ${cls}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>;
+  };
+  const renderTopList = (items, ingresos) => (
+    <div className="report-section">
+      {items.length === 0 ? <p className="muted">Sin ventas</p> : items.map((p, i) => (
+        <div className="report-line" key={p.id}>
+          <span><RankBadge i={i} />{p.nombre}</span>
+          <strong>{p.cantidad} uds</strong>
+        </div>
+      ))}
+      {ingresos != null && (
+        <div className="report-revenue-total">
+          <span>Total ingresos</span>
+          <strong>${ingresos}</strong>
+        </div>
+      )}
+    </div>
+  );
+  const renderStockRow = (p, showBar) => (
+    <div className="stock-alert-row" key={p.id}>
+      <span className="stock-label">{p.nombre}</span>
+      {showBar && <StockBar current={p.cantidad_stock} min={p.stock_minimo || 1} />}
+      <span className="stock-count">{p.cantidad_stock} uds</span>
+    </div>
+  );
   return (
     <div className="report">
-      <h3>Top del Dia</h3>
-      {report.ventasDia.top.length === 0 ? <p className="muted">Sin ventas hoy</p> : report.ventasDia.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos dia:</span><strong>${report.ventasDia.ingresos}</strong></div>
+      <div className="report-summary">
+        <div className="report-summary-card">
+          <span className="label">Hoy</span>
+          <span className="value">${report.ventasDia.ingresos}</span>
+        </div>
+        <div className="report-summary-card">
+          <span className="label">Semana</span>
+          <span className="value">${report.ventasSemana.ingresos}</span>
+        </div>
+        <div className="report-summary-card">
+          <span className="label">Mes</span>
+          <span className="value">${report.ventasMes.ingresos}</span>
+        </div>
+      </div>
 
-      <h3>Productos vendidos hoy</h3>
-      {report.ventasDiaDetalle.length === 0 ? <p className="muted">Sin ventas hoy</p> : report.ventasDiaDetalle.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      <h3 style={{ margin: 0, fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Dia</h3>
+      {renderTopList(report.ventasDia.top, report.ventasDia.ingresos)}
 
-      <h3>Top de la Semana</h3>
-      {report.ventasSemana.top.length === 0 ? <p className="muted">Sin ventas esta semana</p> : report.ventasSemana.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos semana:</span><strong>${report.ventasSemana.ingresos}</strong></div>
+      <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top de la Semana</h3>
+      {renderTopList(report.ventasSemana.top, report.ventasSemana.ingresos)}
 
-      <h3>Top del Mes</h3>
-      {report.ventasMes.top.length === 0 ? <p className="muted">Sin ventas este mes</p> : report.ventasMes.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${report.ventasMes.ingresos}</strong></div>
+      <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Mes</h3>
+      {renderTopList(report.ventasMes.top, report.ventasMes.ingresos)}
 
-      <h3>Menos vendidos (semana)</h3>
-      {(report.menosVendidosSemana || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosSemana.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
+      {report.menosVendidosSemana?.length > 0 && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (semana)</h3>
+          <div className="report-section">
+            {report.menosVendidosSemana.map((p, i) => (
+              <div className="report-line" key={p.id}>
+                <span><RankBadge i={i} />{p.nombre}</span>
+                <strong>{p.vendidos} uds</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      <h3>Menos vendidos (mes)</h3>
-      {(report.menosVendidosMes || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosMes.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
+      {report.menosVendidosMes?.length > 0 && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (mes)</h3>
+          <div className="report-section">
+            {report.menosVendidosMes.map((p, i) => (
+              <div className="report-line" key={p.id}>
+                <span><RankBadge i={i} />{p.nombre}</span>
+                <strong>{p.vendidos} uds</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      <h3>Productos con bajo stock</h3>
-      {(report.agotados || []).map((p) => <div className="report-line" key={p.id}><span className="error">{p.nombre} (Agotado)</span><strong>{p.cantidad_stock} uds</strong></div>)}
-      {(report.bajoStock || []).map((p) => <div className="report-line" key={p.id}><span className="warning" style={{ padding: "0", border: "0", background: "transparent" }}>{p.nombre}</span><strong>{p.cantidad_stock} uds</strong></div>)}
+      {(report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Alertas de Stock</h3>
+          <div className="report-section">
+            {report.agotados?.map(p => renderStockRow(p, false))}
+            {report.bajoStock?.map(p => renderStockRow(p, true))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

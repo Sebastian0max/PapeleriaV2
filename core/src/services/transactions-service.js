@@ -115,6 +115,10 @@ export function revertTransaction({ movimientoId, usuarioId, motivo }, { client,
     }
     db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
       .run(usuarioId, motivo || null, movimientoId);
+    if (tx.tipo === "venta" && tx.nota) {
+      const match = tx.nota.match(/Venta #(\d+)/);
+      if (match) db.prepare("UPDATE ventas SET anulada = 1 WHERE id = ? AND anulada = 0").run(Number(match[1]));
+    }
     db.exec("COMMIT");
   } catch (error) {
     if (String(error).includes("constraint")) db.exec("ROLLBACK");
@@ -182,6 +186,10 @@ export function restoreTransaction({ movimientoId, usuarioId, motivo }, { client
     }
     db.prepare("UPDATE movimientos SET revertida = 0, revertida_por = NULL, motivo_reversion = NULL WHERE id = ?")
       .run(movimientoId);
+    if (tx.tipo === "venta" && tx.nota) {
+      const match = tx.nota.match(/Venta #(\d+)/);
+      if (match) db.prepare("UPDATE ventas SET anulada = 0 WHERE id = ? AND anulada = 1").run(Number(match[1]));
+    }
     db.exec("COMMIT");
   } catch (error) {
     if (String(error).includes("constraint")) db.exec("ROLLBACK");
