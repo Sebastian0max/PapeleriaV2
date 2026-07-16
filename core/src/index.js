@@ -16,10 +16,18 @@ if (isPostgres) {
   const { downloadDb, startPeriodicBackup, flushOnShutdown } = await import("./services/cloud-backup.js");
   await downloadDb();
   getDb();
-  const purged = purgeOldTrash(7);
-  console.log(`[startup] Papelera: ${purged.purged} productos purgados.`);
-  const purgedCanceled = purgeOldCanceled(7);
-  console.log(`[startup] Canceladas: ${purgedCanceled.purged} transacciones purgadas.`);
+  try {
+    const purged = purgeOldTrash(7);
+    console.log(`[startup] Papelera: ${purged.purged} productos purgados.`);
+  } catch (err) {
+    console.error(`[startup] Error purgando papelera: ${err.message}`);
+  }
+  try {
+    const purgedCanceled = purgeOldCanceled(7);
+    console.log(`[startup] Canceladas: ${purgedCanceled.purged} transacciones purgadas.`);
+  } catch (err) {
+    console.error(`[startup] Error purgando canceladas: ${err.message}`);
+  }
   startPeriodicBackup();
   setInterval(async () => {
     const h = new Date().getHours();

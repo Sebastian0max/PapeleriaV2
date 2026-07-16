@@ -1,0 +1,77 @@
+00:00:00.008280 main     VirtualBox COM Server 7.1.8 r168469 win.amd64 (Apr 11 2025 16:45:31) release log
+00:00:00.008283 main     Log opened 2026-07-14T14:46:05.167722200Z
+00:00:00.008284 main     Build Type: release
+00:00:00.008291 main     OS Product: Windows 10
+00:00:00.008292 main     OS Release: 10.0.19045
+00:00:00.008292 main     OS Service Pack: 
+00:00:00.040595 main     DMI Product Name: HP 280 G2 SFF
+00:00:00.057010 main     DMI Product Version:  
+00:00:00.057024 main     Firmware type: UEFI
+00:00:00.057546 main     Secure Boot: Enabled
+00:00:00.058083 main     Host RAM: 8082MB (7.8GB) total, 5417MB (5.2GB) available
+00:00:00.058099 main     Executable: C:\Program Files\Oracle\VirtualBox\VBoxSVC.exe
+00:00:00.058100 main     Process ID: 10604
+00:00:00.058101 main     Package type: WINDOWS_64BITS_GENERIC
+00:00:00.058454 main     Windows Features:
+00:00:00.058456 main       Core Isolation (Memory Integrity): Not supported
+00:00:00.136879          VirtualBox: object creation starts
+00:00:00.138299          Home directory: 'C:\Users\TCGADMIN\.VirtualBox'
+00:00:00.138658          Installed Drivers:
+00:00:00.141417            C:\WINDOWS\system32\DRIVERS\VBoxNetLwf.sys (Version: 7.1.8.18469)
+00:00:00.142190            C:\WINDOWS\System32\drivers\VBoxUSBMon.sys (Version: 7.1.8.18469)
+00:00:00.142727            C:\WINDOWS\System32\drivers\VBoxSup.sys (Version: 7.1.8.18469)
+00:00:00.143499            C:\WINDOWS\system32\DRIVERS\VBoxNetAdp6.sys (Version: 7.1.8.18469)
+00:00:00.161620          Loading settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml" with version "1.12-windows"
+00:00:00.171231          usbLibGetDevices: Starting USB device enumeration
+00:00:00.185639          usbLibGetDevices: Found 4 USB devices, 0 captured
+00:00:00.250483          HostDnsMonitor: initializing
+00:00:00.262179          HostDnsMonitor: updating information
+00:00:00.263493          HostDnsMonitor: old information
+00:00:00.263494            no server entries
+00:00:00.263495            no domain set
+00:00:00.263495            no search string entries
+00:00:00.263496          HostDnsMonitor: new information
+00:00:00.263496            no server entries
+00:00:00.263497            domain: tractocarga.local
+00:00:00.263497            no search string entries
+00:00:00.274178          VD: VDInit finished with VINF_SUCCESS
+00:00:00.543430          Platform architecture set to 'x86'
+00:00:00.559305          Loading settings file "C:\Users\TCGADMIN\VirtualBox VMs\cliente\cliente.vbox" with version "1.19-windows"
+00:00:00.560319          Platform architecture set to 'x86'
+00:00:00.561369          Platform architecture set to 'x86'
+00:00:00.572041          Loading settings file "C:\Users\TCGADMIN\VirtualBox VMs\cliente clonar\cliente clonar.vbox" with version "1.19-windows"
+00:00:00.572164          Platform architecture set to 'x86'
+00:00:00.572401          Platform architecture set to 'x86'
+00:00:00.583118          Loading settings file "C:\Users\TCGADMIN\VirtualBox VMs\servidor1\servidor1.vbox" with version "1.19-windows"
+00:00:00.583364          Platform architecture set to 'x86'
+00:00:00.616874          OCI: Local config file 'C:\Users\TCGADMIN\.VirtualBox\oci_config' does not exist
+00:00:00.617050          OCI: Original config file 'C:\Users\TCGADMIN\.oci\config' does not exist
+00:00:00.617052          OCI: Reading profiles finished with status ERROR_SUCCESS
+00:00:00.617776          ExtPack: Created cloud provider 'OCI' (hrc=ERROR_SUCCESS)
+00:00:00.618952          VirtualBox: object created
+00:00:00.809840          Saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml" with version "1.12-windows"
+00:00:00.815004          Finished saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml"
+00:00:00.815359          Saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml" with version "1.12-windows"
+00:00:00.818656          Finished saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml"
+00:00:00.819086          Saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml" with version "1.12-windows"
+00:00:00.822576          Finished saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml"
+00:00:03.150077          ERROR [COM]: aRC=VBOX_E_INVALID_VM_STATE (0x80bb0002) aIID={e36a5081-a82a-40bd-9e4e-42a44d6ce50f} aComponent={MachineWrap} aText={The machine is not mutable, saved or running (state is PoweredOff)}, preserve=false aResultDetail=0
+00:00:09.972920          Saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml" with version "1.12-windows"
+00:00:09.977310          Finished saving settings file "C:\Users\TCGADMIN\.VirtualBox\VirtualBox.xml"
+00:00:10.065629 dns-monitor HostDnsMonitor: updating information
+00:00:10.065651 dns-monitor HostDnsMonitor: old information
+00:00:10.065659 dns-monitor   no server entries
+00:00:10.065665 dns-monitor   domain: tractocarga.local
+00:00:10.065670 dns-monitor   no search string entries
+00:00:10.065676 dns-monitor HostDnsMonitor: new information
+00:00:10.065681 dns-monitor   server 1: 170.238.239.2
+00:00:10.065687 dns-monitor   server 2: 8.8.8.8
+00:00:10.065693 dns-monitor   server 3: 4.2.2.2
+00:00:10.065698 dns-monitor   domain: tractocarga.local
+00:00:10.065704 dns-monitor   no search string entries
+00:00:16.382281 main     VirtualBox: object deletion starts
+00:00:16.384047 main     ERROR [COM]: aRC=VBOX_E_OBJECT_IN_USE (0x80bb000c) aIID={7d510820-a678-4730-a862-818dcd3fbed0} aComponent={MediumWrap} aText={Medium 'C:\Users\TCGADMIN\VirtualBox VMs\servidor1\servidor1.vdi' cannot be closed because it is still attached to 1 virtual machines}, preserve=false aResultDetail=0
+00:00:16.387292 main     HostDnsMonitor: shutting down ...
+00:00:16.387366 main     HostDnsMonitor: shut down
+00:00:16.671762 Watcher  ERROR [COM]: aRC=E_ACCESSDENIED (0x80070005) aIID={d644ad1e-c501-4fc7-9ab6-aa6d763bc540} aComponent={VirtualBoxWrap} aText={The object is not ready}, preserve=false aResultDetail=0
+00:00:16.751814 main     VirtualBox: object deleted

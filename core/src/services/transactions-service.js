@@ -201,31 +201,23 @@ export function restoreTransaction({ movimientoId, usuarioId, motivo }, { client
 export function purgeOldCanceled(days = 7) {
   const db = getDb();
   const old = db.prepare(`
-    SELECT m.*, p.nombre AS producto_nombre
-    FROM movimientos m
-    LEFT JOIN productos p ON p.id = m.producto_id
-    WHERE m.revertida = 1 AND m.en_papelera = 0
-    AND julianday('now') - julianday(m.fecha) >= ?
+    SELECT id FROM movimientos
+    WHERE revertida = 1 AND en_papelera = 0
+    AND julianday('now') - julianday(fecha) >= ?
   `).all(days);
   const count = old.length;
   if (count > 0) {
+    const ids = old.map(m => m.id);
+    const placeholders = ids.map(() => '?').join(',');
+    db.prepare(`DELETE FROM bitacora_reversiones WHERE movimiento_id IN (${placeholders})`).run(...ids);
     const insertAudit = db.prepare(`
-      INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion, detalle)
-      VALUES (0, 'movimiento', ?, 'purga_auto', ?)
+      INSERT INTO bitacora_auditoria (usuario_id, entidad, entidad_id, accion)
+      VALUES (0, 'movimiento', ?, 'purga_auto')
     `);
-    const deleteMov = db.prepare("DELETE FROM movimientos WHERE id = ?");
-    for (const mov of old) {
-      const detalle = JSON.stringify({
-        tipo: mov.tipo,
-        producto: mov.producto_nombre || mov.producto_id,
-        cantidad: mov.cantidad,
-        fecha: mov.fecha,
-        revertida_por: mov.revertida_por,
-        motivo_reversion: mov.motivo_reversion
-      });
-      insertAudit.run(mov.id, detalle);
-      deleteMov.run(mov.id);
+    for (const id of ids) {
+      insertAudit.run(id);
     }
+    db.prepare(`DELETE FROM movimientos WHERE id IN (${placeholders})`).run(...ids);
   }
   return { purged: count };
 }

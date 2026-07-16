@@ -1,0 +1,22 @@
+00:00:01.169240 VirtualBox GUI VM Selector Window 7.1.8 r168469 win.amd64 (Apr 11 2025 16:45:31) release log
+00:00:01.169242 Log opened 2026-07-14T14:46:05.938154600Z
+00:00:01.169243 Build Type: release
+00:00:01.169248 OS Product: Windows 10
+00:00:01.169249 OS Release: 10.0.19045
+00:00:01.169249 OS Service Pack: 
+00:00:01.186285 DMI Product Name: HP 280 G2 SFF
+00:00:01.191179 DMI Product Version:  
+00:00:01.191197 Firmware type: UEFI
+00:00:01.191685 Secure Boot: Enabled
+00:00:01.191700 Host RAM: 8082MB (7.8GB) total, 5390MB (5.2GB) available
+00:00:01.191707 Executable: C:\Program Files\Oracle\VirtualBox\VirtualBox.exe
+00:00:01.191708 Process ID: 10536
+00:00:01.191708 Package type: WINDOWS_64BITS_GENERIC
+00:00:01.191709 Windows Features:
+00:00:01.191709   Core Isolation (Memory Integrity): Not supported
+00:00:01.191957 Qt version: 6.5.3
+00:00:01.193966 GUI: UIMediumEnumerator: Initial medium-enumeration finished!
+00:00:01.242972 GUI: UIMediumEnumerator: Medium-enumeration started...
+00:00:03.182272 GUI: UIMediumEnumerator: Medium-enumeration finished!
+00:00:10.582361 GUI: UICommon: Handling aboutToQuit request..
+00:00:11.756211 GUI: UICommon: aboutToQuit request handled!
