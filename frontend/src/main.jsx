@@ -1300,7 +1300,7 @@ function Ganancias({ token }) {
         <div className="chart-box">
           <h3>Evolución últimos 30 días</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={evolution} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
+            <BarChart data={evolution} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} />

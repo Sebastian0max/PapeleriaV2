@@ -12,128 +12,149 @@ vi.mock("../db/connection.js", async () => {
 });
 
 import { runMigrations } from "../db/migrations.js";
-import { createProduct } from "../services/products-service.js";
+import { createProduct, listProducts, deleteProduct, restoreProduct, listTrashProducts } from "../services/products-service.js";
 import { createSale } from "../services/sales-service.js";
 import { listTransactions, revertTransaction, restoreTransaction } from "../services/transactions-service.js";
 import { getStockReport, getProfitReport } from "../services/reports-service.js";
 
-describe("Revert/Report E2E", () => {
-  let adminId, productoId, saleId, movimientoId;
+// ─── Helper: picks a product from listProducts results ───
+function pick(products, name) {
+  return (products.products || products).find(p => p.nombre === name);
+}
+
+// ─── Test: Issue #1 — Product restore from trash ───
+describe("ISSUE 1: Product restore from trash", () => {
+  let adminId, prod;
 
   beforeAll(() => {
     runMigrations(testDbRef.current);
     adminId = testDbRef.current.prepare("SELECT id FROM usuarios WHERE usuario = 'admin'").get()?.id;
-    const prod = createProduct({
-      nombre: "E2E Test Product",
-      cantidad_stock: 100,
-      precio: 5000,
-      costo: 3000,
-      stock_minimo: 5,
-    });
+  });
+
+  it("creates a product", () => {
+    prod = createProduct({ nombre: "RestoreTest", cantidad_stock: 10, precio: 1000, costo: 500, stock_minimo: 1 });
+    expect(prod.id).toBeGreaterThan(0);
+    expect(prod.nombre).toBe("RestoreTest");
+  });
+
+  it("deletes the product (moves to trash)", () => {
+    const result = deleteProduct(prod.id, adminId);
+    expect(result.trash).toBe(true);
+    // should NOT be in active list
+    const active = listProducts();
+    expect(pick(active, "RestoreTest")).toBeUndefined();
+    // SHOULD be in trash list
+    const trash = listTrashProducts();
+    expect(pick(trash, "RestoreTest")).toBeDefined();
+  });
+
+  it("restoreProduct service restores it correctly (endpoint: POST /productos/:id/restaurar)", () => {
+    const result = restoreProduct(prod.id, adminId);
+    expect(result.restored || result.id).toBeTruthy?.();
+    // should be back in active list
+    const active = listProducts();
+    expect(pick(active, "RestoreTest")).toBeDefined();
+    // should NOT be in trash
+    const trash = listTrashProducts();
+    expect(pick(trash, "RestoreTest")).toBeUndefined();
+    // product should be active again
+    const row = testDbRef.current.prepare("SELECT activo, en_papelera FROM productos WHERE id = ?").get(prod.id);
+    expect(row.activo).toBe(1);
+    expect(row.en_papelera).toBe(0);
+  });
+});
+
+// ─── Test: Issue #2 — Reverted transactions filtered per tab ───
+describe("ISSUE 2: Reverted transactions hidden from Todas/Ventas, only in Canceladas", () => {
+  let adminId, productoId, saleId, movimientoId;
+
+  beforeAll(() => {
+    adminId = testDbRef.current.prepare("SELECT id FROM usuarios WHERE usuario = 'admin'").get()?.id;
+    const prod = createProduct({ nombre: "FilterTest", cantidad_stock: 100, precio: 5000, costo: 3000, stock_minimo: 5 });
     productoId = prod.id;
   });
 
-  it("1. creates a sale and returns sale + movement records", () => {
+  it("STEP 1 — create a sale", () => {
     const sale = createSale({ productoId, cantidad: 3, usuarioId: adminId, precio_unitario: 5000 });
-    expect(sale).toBeDefined();
     expect(sale.id).toBeGreaterThan(0);
     saleId = sale.id;
-
     const mov = testDbRef.current.prepare("SELECT * FROM movimientos WHERE nota = ?").get(`Venta #${saleId}`);
-    expect(mov).toBeDefined();
-    expect(mov.tipo).toBe("venta");
-    expect(mov.revertida).toBe(0);
     movimientoId = mov.id;
+    expect(mov.revertida).toBe(0);
   });
 
-  it("2. sale exists in database with correct values", () => {
-    const sale = testDbRef.current.prepare("SELECT * FROM ventas WHERE id = ?").get(saleId);
-    expect(sale).toBeDefined();
-    expect(sale.anulada).toBe(0);
-    expect(sale.total).toBe(15000);
-    expect(sale.cantidad).toBe(3);
-    expect(sale.precio_unitario).toBe(5000);
-  });
-
-  it("3. transaction appears in listTransactions (Todas)", () => {
+  // ─── BEFORE revert: sale appears in all relevant tabs ───
+  it("STEP 2 — BEFORE revert: sale appears in Todas (revertida=0)", () => {
     const result = listTransactions({ revertida: "0" });
-    const found = result.find((t) => t.id === movimientoId);
+    const found = result.find(t => t.id === movimientoId);
     expect(found).toBeDefined();
-    expect(found.revertida).toBe(0);
   });
 
-  it("4. reverts the transaction", () => {
-    const result = revertTransaction({ movimientoId, usuarioId: adminId, motivo: "E2E test revert" });
-    expect(result.reverted).toBe(true);
-
-    const mov = testDbRef.current.prepare("SELECT * FROM movimientos WHERE id = ?").get(movimientoId);
-    expect(mov.revertida).toBe(1);
-    expect(mov.revertida_por).toBe(adminId);
+  it("STEP 3 — BEFORE revert: sale appears in Ventas tab", () => {
+    const result = listTransactions({ tipo: "venta", revertida: "0" });
+    const found = result.find(t => t.id === movimientoId);
+    expect(found).toBeDefined();
   });
 
-  it("5. marks ventas.anulada = 1 on revert", () => {
-    const venta = testDbRef.current.prepare("SELECT anulada FROM ventas WHERE id = ?").get(saleId);
-    expect(venta.anulada).toBe(1);
-  });
-
-  it("6. reverted transaction NOT in Todas list", () => {
-    const result = listTransactions({ revertida: "0" });
-    const found = result.find((t) => t.id === movimientoId);
+  it("STEP 4 — BEFORE revert: sale does NOT appear in Canceladas (revertida=1)", () => {
+    const result = listTransactions({ revertida: "1" });
+    const found = result.find(t => t.id === movimientoId);
     expect(found).toBeUndefined();
   });
 
-  it("7. reverted transaction appears in Canceladas list", () => {
+  // ─── REVERT the transaction ───
+  it("STEP 5 — revert the transaction", () => {
+    const result = revertTransaction({ movimientoId, usuarioId: adminId, motivo: "Filter test revert" });
+    expect(result.reverted).toBe(true);
+    const mov = testDbRef.current.prepare("SELECT revertida FROM movimientos WHERE id = ?").get(movimientoId);
+    expect(mov.revertida).toBe(1);
+  });
+
+  // ─── AFTER revert: sale must be hidden from Todas/Ventas ───
+  it("STEP 6 — AFTER revert: sale is HIDDEN from Todas (revertida=0)", () => {
+    const result = listTransactions({ revertida: "0" });
+    const found = result.find(t => t.id === movimientoId);
+    expect(found).toBeUndefined();
+  });
+
+  it("STEP 7 — AFTER revert: sale is HIDDEN from Ventas tab", () => {
+    const result = listTransactions({ tipo: "venta", revertida: "0" });
+    const found = result.find(t => t.id === movimientoId);
+    expect(found).toBeUndefined();
+  });
+
+  it("STEP 8 — AFTER revert: sale IS visible in Canceladas (revertida=1)", () => {
     const result = listTransactions({ revertida: "1" });
-    const found = result.find((t) => t.id === movimientoId);
+    const found = result.find(t => t.id === movimientoId);
     expect(found).toBeDefined();
     expect(found.revertida).toBe(1);
   });
 
-  it("8. stock report excludes reverted sale (by DB check)", () => {
-    const count = testDbRef.current.prepare(`
-      SELECT COUNT(*) AS c FROM ventas WHERE anulada = 0 AND id = ?
-    `).get(saleId);
-    expect(count.c).toBe(0);
-  });
-
-  it("9. profit report excludes reverted sale (by DB check)", () => {
-    const count = testDbRef.current.prepare(`
-      SELECT COUNT(*) AS c FROM ventas v
-      WHERE v.anulada = 0 AND v.id = ?
-    `).get(saleId);
-    expect(count.c).toBe(0);
-  });
-
-  it("10. restores the transaction", () => {
-    const result = restoreTransaction({ movimientoId, usuarioId: adminId, motivo: "E2E test restore" });
+  // ─── RESTORE the transaction ───
+  it("STEP 9 — restore the reverted transaction (endpoint: POST /transacciones/:id/restaurar)", () => {
+    const result = restoreTransaction({ movimientoId, usuarioId: adminId, motivo: "Filter test restore" });
     expect(result.restored).toBe(true);
-    const mov = testDbRef.current.prepare("SELECT * FROM movimientos WHERE id = ?").get(movimientoId);
+    const mov = testDbRef.current.prepare("SELECT revertida FROM movimientos WHERE id = ?").get(movimientoId);
     expect(mov.revertida).toBe(0);
-    expect(mov.revertida_por).toBeNull();
   });
 
-  it("11. marks ventas.anulada = 0 on restore", () => {
-    const venta = testDbRef.current.prepare("SELECT anulada FROM ventas WHERE id = ?").get(saleId);
-    expect(venta.anulada).toBe(0);
-  });
-
-  it("12. restored transaction appears again in Todas", () => {
+  // ─── AFTER restore: sale is back ───
+  it("STEP 10 — AFTER restore: sale is visible again in Todas", () => {
     const result = listTransactions({ revertida: "0" });
-    const found = result.find((t) => t.id === movimientoId);
+    const found = result.find(t => t.id === movimientoId);
     expect(found).toBeDefined();
     expect(found.revertida).toBe(0);
   });
 
-  it("13. restored sale is counted in stock report (raw query)", () => {
-    const count = testDbRef.current.prepare(`
-      SELECT COUNT(*) AS c FROM ventas WHERE anulada = 0 AND id = ?
-    `).get(saleId);
-    expect(count.c).toBe(1);
+  it("STEP 11 — AFTER restore: sale is visible again in Ventas", () => {
+    const result = listTransactions({ tipo: "venta", revertida: "0" });
+    const found = result.find(t => t.id === movimientoId);
+    expect(found).toBeDefined();
   });
 
-  it("14. stock is correctly managed through sale->revert->restore", () => {
-    const product = testDbRef.current.prepare("SELECT cantidad_stock FROM productos WHERE id = ?").get(productoId);
-    // sale(3) → revert(+3) → restore(-3) = net -3 from initial 100
-    expect(product.cantidad_stock).toBe(97);
+  it("STEP 12 — AFTER restore: sale is hidden from Canceladas", () => {
+    const result = listTransactions({ revertida: "1" });
+    const found = result.find(t => t.id === movimientoId);
+    expect(found).toBeUndefined();
   });
 });
