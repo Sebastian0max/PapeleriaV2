@@ -144,7 +144,7 @@ export function runMigrations(db) {
   const count = db.prepare("SELECT COUNT(*) AS total FROM usuarios").get().total;
   if (count === 0) {
     db.prepare("INSERT INTO usuarios (usuario, password_hash, rol) VALUES (?, ?, ?)")
-      .run("admin", bcrypt.hashSync("admin123", 10), "admin");
+      .run("admin", bcrypt.hashSync(process.env.ADMIN_DEFAULT_PASSWORD || "admin123", 10), "admin");
   }
   seedRolesAndPermissions(db);
   backfillUsersAndProducts(db);

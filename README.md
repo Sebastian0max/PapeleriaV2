@@ -95,11 +95,11 @@ Frontend: `http://localhost:5173`
 
 ## Usuario por defecto
 
-| Usuario | Password  | Rol   |
-|---------|-----------|-------|
-| admin   | admin123  | admin |
+| Usuario | Password               | Rol   |
+|---------|------------------------|-------|
+| admin   | (ADMIN_DEFAULT_PASSWORD) | admin |
 
-> **⚠️ Cambia la contraseña del admin inmediatamente en producción.**
+> La contraseña por defecto se configura en la variable de entorno `ADMIN_DEFAULT_PASSWORD`. Si no está definida, se usa un valor interno. **Cambia la contraseña del admin inmediatamente en producción.**
 
 ## Funcionalidades
 
