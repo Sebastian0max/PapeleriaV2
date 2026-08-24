@@ -4,6 +4,7 @@ import {
   Boxes,
   Download,
   FileText,
+  ImagePlus,
   LogOut,
   Moon,
   PackagePlus,
@@ -15,9 +16,9 @@ import {
   TrendingUp,
   Upload,
   Users,
+  AlertTriangle,
   RotateCcw,
-  Clock,
-  AlertTriangle
+  Clock
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import "./styles.css";
@@ -143,8 +144,8 @@ function Login({ onLogin }) {
       <form className="login-panel" onSubmit={submit}>
         <Boxes size={40} />
         <h1>Sistema Papeleria</h1>
-        <label>Usuario<input name="usuario" placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
-        <label>Password<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+        <label>Usuario<input placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
+        <label>Password<input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <p className="error">{error}</p>}
         <button>Entrar</button>
       </form>
@@ -176,8 +177,6 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
 
   if (!isOpen) return null;
 
-  const esRestaurar = transaccion?.revertida;
-
   async function handleConfirm() {
     if (!password) {
       setError("Debes ingresar la contraseña del administrador.");
@@ -185,12 +184,12 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
     }
     setBusy(true);
     setError("");
-    const result = await onConfirm(transaccion.id, password, motivo, esRestaurar);
-    if (result.ok) {
+    const ok = await onConfirm(transaccion.id, password, motivo);
+    if (ok) {
       setPassword("");
       setMotivo("");
     } else {
-      setError(result.error || "No se pudo completar la operación. Verifica la contraseña e intenta de nuevo.");
+      setError("Contraseña incorrecta. Intenta de nuevo.");
     }
     setBusy(false);
   }
@@ -200,7 +199,7 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h3>{esRestaurar ? "Restaurar" : "Revertir"} {tipoLabel}</h3>
+        <h3>Revertir {tipoLabel}</h3>
         <p style={{ whiteSpace: "pre-line", margin: "16px 0" }}>
           Producto: {transaccion?.producto_nombre}{"\n"}
           Cantidad: {transaccion?.cantidad} uds{"\n"}
@@ -210,14 +209,14 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
         {error && <p className="error" style={{ margin: "8px 0" }}>{error}</p>}
         <label>
           Motivo (opcional)
-          <input name="motivo" placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+          <input placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
         </label>
         <label style={{ marginTop: "8px" }}>
           Contraseña de administrador
-          <input name="password_confirm" type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <input type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
         </label>
         <div className="modal-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "16px" }}>
-          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? (esRestaurar ? "Restaurando..." : "Revertindo...") : (esRestaurar ? "Confirmar restauración" : "Confirmar reversión")}</button>
+          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? "Revertindo..." : "Confirmar reversión"}</button>
           <button onClick={() => { setPassword(""); setMotivo(""); setError(""); onCancel(); }}>Cancelar</button>
         </div>
       </div>
@@ -259,28 +258,27 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       setMessage(result.message || "Venta eliminada");
       setTimeout(() => setMessage(""), 5000);
       load();
-      setReloadKey(k => k + 1);
     } catch (err) {
       setError(err.message);
     }
     setSaleToDelete(null);
   }
 
-  async function confirmRevert(movimientoId, password, motivo, esRestaurar) {
+  async function confirmRevert(movimientoId, password, motivo) {
     try {
-      const endpoint = esRestaurar ? `/transacciones/${movimientoId}/restaurar` : `/transacciones/${movimientoId}/revertir`;
-      const result = await api(token, endpoint, {
+      const result = await api(token, `/transacciones/${movimientoId}/revertir`, {
         method: "POST",
         body: JSON.stringify({ password, motivo: motivo || undefined })
       });
-      setMessage(result.message || (esRestaurar ? "Transaccion restaurada correctamente" : "Transaccion revertida correctamente"));
+      setMessage(result.message || "Transaccion revertida correctamente");
       setTimeout(() => setMessage(""), 5000);
       setRevertTarget(null);
       setReloadKey(k => k + 1);
       load();
-      return { ok: true };
+      return true;
     } catch (err) {
-      return { ok: false, error: err.message };
+      setError(err.message);
+      return false;
     }
   }
 
@@ -309,9 +307,22 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
         can("reportes:ver") ? api(token, "/reportes/ganancias?periodo=dia") : Promise.resolve(null)
       ]);
       const [productResult, saleResult, reportResult, profitResult] = results;
-      if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(productResult.value.products);
-      if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(saleResult.value.sales);
-      if (reportResult.status === "fulfilled" && reportResult.value) setReport(reportResult.value);
+      if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(Array.isArray(productResult.value.products) ? productResult.value.products : []);
+      if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(Array.isArray(saleResult.value.sales) ? saleResult.value.sales : []);
+      if (reportResult.status === "fulfilled" && reportResult.value) {
+        const raw = reportResult.value;
+        setReport({
+          ...raw,
+          ventasDia: raw.ventasDia && typeof raw.ventasDia === "object" ? { top: Array.isArray(raw.ventasDia.top) ? raw.ventasDia.top : [], ingresos: raw.ventasDia.ingresos ?? 0 } : { top: [], ingresos: 0 },
+          ventasDiaDetalle: Array.isArray(raw.ventasDiaDetalle) ? raw.ventasDiaDetalle : [],
+          ventasSemana: raw.ventasSemana && typeof raw.ventasSemana === "object" ? { top: Array.isArray(raw.ventasSemana.top) ? raw.ventasSemana.top : [], ingresos: raw.ventasSemana.ingresos ?? 0 } : { top: [], ingresos: 0 },
+          ventasMes: raw.ventasMes && typeof raw.ventasMes === "object" ? { top: Array.isArray(raw.ventasMes.top) ? raw.ventasMes.top : [], ingresos: raw.ventasMes.ingresos ?? 0 } : { top: [], ingresos: 0 },
+          menosVendidosSemana: Array.isArray(raw.menosVendidosSemana) ? raw.menosVendidosSemana : [],
+          menosVendidosMes: Array.isArray(raw.menosVendidosMes) ? raw.menosVendidosMes : [],
+          agotados: Array.isArray(raw.agotados) ? raw.agotados : [],
+          bajoStock: Array.isArray(raw.bajoStock) ? raw.bajoStock : [],
+        });
+      }
       if (profitResult.status === "fulfilled" && profitResult.value) setProfitToday(profitResult.value);
       const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message).filter(Boolean);
       if (errors.length) setError(errors.join("; "));
@@ -321,7 +332,10 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     }
   }
 
-  useEffect(() => { load(); }, [search]);
+  useEffect(() => {
+    const t = setTimeout(() => load(), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   useEffect(() => { if (view !== "config") load(); }, [reloadKey]);
 
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
@@ -367,10 +381,19 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <Metric icon={<Boxes />} label="Productos" value={products.length} />
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
-          {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
-          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-warning" />}
-          {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} className="metric-warning" />}
+          {report && report.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} />}
+          {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${(profitToday.totalGanancia ?? 0).toLocaleString()}`} />}
         </section>
+      )}
+
+      {view !== "config" && report && report.bajoStock?.length > 0 && (
+        <div className="dashboard-stock-alert">
+          <span>⚠️</span>
+          <span>
+            <strong>{report.bajoStock.length} con stock bajo</strong>
+            {" - Revisa el panel de Stock para más detalles."}
+          </span>
+        </div>
       )}
 
       {view === "inventario" && (
@@ -378,7 +401,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div className="search"><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+              <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
             </div>
             {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
@@ -400,7 +423,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <div className="panel-head">
               <h2>Vender</h2>
             </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => { load(); setReloadKey(k => k + 1); }} />}
+            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
@@ -445,13 +468,15 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   );
 }
 
-function Metric({ icon, label, value, className }) {
-  return <div className={"metric" + (className ? " " + className : "")}>{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
+function Metric({ icon, label, value }) {
+  return <div className="metric">{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
 }
 
 function ProductForm({ token, onDone }) {
   const empty = { nombre: "", cantidad_stock: "", precio: "", costo: "" };
   const [form, setForm] = useState(empty);
+  const [image, setImage] = useState(null);
+
   async function submit(event) {
     event.preventDefault();
     const payload = {
@@ -464,17 +489,24 @@ function ProductForm({ token, onDone }) {
       sku: "",
       categoria: ""
     };
-    await api(token, "/productos", { method: "POST", body: JSON.stringify(payload) });
+    const data = await api(token, "/productos", { method: "POST", body: JSON.stringify(payload) });
+    if (image) {
+      const fd = new FormData();
+      fd.append("file", image);
+      await api(token, `/productos/${data.product.id}/imagen`, { method: "POST", body: fd });
+    }
     setForm(empty);
+    setImage(null);
     onDone();
   }
 
   return (
     <form className="product-form" onSubmit={submit}>
-      <label>Nombre del producto<input name="nombre" required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
-      <label>Stock<input name="cantidad_stock" required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
-      <label>Precio de costo<input name="costo" type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
-      <label>Precio de venta<input name="precio" required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
+      <label>Nombre del producto<input required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
+      <label>Cantidad en stock<input required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
+      <label>Precio de costo<input type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
+      <label>Precio de venta<input required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
+      <label className="file-button" title="Imagen"><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
       <button title="Agregar producto"><PackagePlus size={18} /></button>
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) >= Number(form.precio) && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0 }}>⚠️ El precio de venta es menor o igual al costo. ¡Estás vendiendo a pérdida!</span>}
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) < Number(form.precio) && (Number(form.precio) - Number(form.costo)) / Number(form.precio) < 0.1 && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0, background: "var(--warning-bg)", borderColor: "var(--warning-border)" }}>⚠️ Margen menor al 10%. Considera aumentar el precio de venta.</span>}
@@ -500,7 +532,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     setEditForm({
       nombre: product.nombre,
       precio: product.precio,
-      costo: product.costo ?? "",
+      costo: product.costo ?? 0,
       cantidad_stock: product.cantidad_stock
     });
     setIsEditing(true);
@@ -529,10 +561,10 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     return (
       <div className="row product-row-edit">
         <div className="edit-fields">
-          <label>Nombre<input name="edit-nombre" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
-          <label>Stock<input name="edit-stock" type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
-          <label>Costo<input name="edit-costo" type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
-          <label>Venta<input name="edit-precio" type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
+          <label>Nombre<input value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
+          <label>Stock<input type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
+          <label>Costo<input type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
+          <label>Venta<input type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
         </div>
         <div className="actions">
           <button onClick={saveEdit}>Guardar</button>
@@ -563,13 +595,13 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
 
 function SaleForm({ token, products, onDone }) {
   const [productoId, setProductoId] = useState(0);
-  const [cantidad, setCantidad] = useState("1");
+  const [cantidad, setCantidad] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = selectedProduct && +cantidad > 0 ? selectedProduct.precio * +cantidad : 0;
+  const total = selectedProduct && cantidad > 0 ? selectedProduct.precio * cantidad : 0;
 
   useEffect(() => {
     const prod = products.find(p => p.id === productoId);
@@ -593,22 +625,22 @@ function SaleForm({ token, products, onDone }) {
       return;
     }
 
-    if (!cantidad || !Number.isFinite(+cantidad) || +cantidad <= 0) {
+    if (!cantidad || cantidad <= 0) {
       setError("No se pudo completar la venta: la cantidad ingresada no es válida.");
       return;
     }
 
-    if (+cantidad > selectedProduct.cantidad_stock) {
+    if (cantidad > selectedProduct.cantidad_stock) {
       setError(`No se pudo completar la venta: solo hay ${selectedProduct.cantidad_stock} unidades disponibles de este producto.`);
       return;
     }
 
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
-      setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
+      setMessage(`Venta exitosa: ${cantidad} unidades de ${selectedProduct.nombre} por $${(total ?? 0).toLocaleString()}`);
       setError("");
-      setCantidad("1");
+      setCantidad(1);
       setProductoId("");
       onDone();
     } catch (err) {
@@ -623,7 +655,7 @@ function SaleForm({ token, products, onDone }) {
     <form className="sale-form" onSubmit={submit}>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-      <select name="producto_id" value={productoId} onChange={(e) => setProductoId(Number(e.target.value))}>
+      <select value={productoId} onChange={(e) => setProductoId(Number(e.target.value))}>
         <option value={0}>Producto</option>
         {products.map((product) => (
           <option key={product.id} value={product.id}>
@@ -634,21 +666,21 @@ function SaleForm({ token, products, onDone }) {
       {selectedProduct && (
         <div className="stock-info">
           <span><strong>Stock:</strong> {selectedProduct.cantidad_stock} uds</span>
-          <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
+          <span><strong>Precio:</strong> ${(selectedProduct.precio ?? 0).toLocaleString()} c/u</span>
         </div>
       )}
-      <input name="cantidad" type="number" min="1" placeholder="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+      <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
       <button title="Vender" disabled={busy}>
         <ShoppingCart size={18} />
       </button>
-      {selectedProduct && +cantidad > 0 && (
+      {selectedProduct && cantidad > 0 && (
         <div className="stock-info total-display">
-          Total a cobrar: <span>${total.toLocaleString()}</span>
+           Total a cobrar: <span>${(total ?? 0).toLocaleString()}</span>
         </div>
       )}
       {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
         <div className="sale-alert">
-          ⚠️ Este producto se vende por debajo de su costo (${selectedProduct.costo.toLocaleString()})
+          ⚠️ Este producto se vende por debajo de su costo (${(selectedProduct.costo ?? 0).toLocaleString()})
         </div>
       )}
       {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
@@ -662,101 +694,36 @@ function SaleForm({ token, products, onDone }) {
 
 function Report({ report }) {
   if (!report) return null;
-  const RankBadge = ({ i }) => {
-    const cls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "rank-n";
-    return <span className={`rank ${cls}`}>{i + 1}</span>;
-  };
-  const StockBar = ({ current, min }) => {
-    const pct = min > 0 ? Math.round((current / min) * 100) : 0;
-    const cls = pct === 0 ? "critical" : pct < 50 ? "warning" : "ok";
-    return <div className="stock-bar"><div className={`stock-bar-fill ${cls}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>;
-  };
-  const renderTopList = (items, ingresos) => (
-    <div className="report-section">
-      {items.length === 0 ? <p className="muted">Sin ventas</p> : items.map((p, i) => (
-        <div className="report-line" key={p.id}>
-          <span><RankBadge i={i} />{p.nombre}</span>
-          <strong>{p.cantidad} uds</strong>
-        </div>
-      ))}
-      {ingresos != null && (
-        <div className="report-revenue-total">
-          <span>Total ingresos</span>
-          <strong>${ingresos}</strong>
-        </div>
-      )}
-    </div>
-  );
-  const renderStockRow = (p, showBar) => (
-    <div className="stock-alert-row" key={p.id}>
-      <span className="stock-label">{p.nombre}</span>
-      {showBar && <StockBar current={p.cantidad_stock} min={p.stock_minimo || 1} />}
-      <span className="stock-count">{p.cantidad_stock} uds</span>
-    </div>
-  );
+  const vd = report.ventasDia || { top: [], ingresos: 0 };
+  const vs = report.ventasSemana || { top: [], ingresos: 0 };
+  const vm = report.ventasMes || { top: [], ingresos: 0 };
+  const vdd = report.ventasDiaDetalle || [];
   return (
     <div className="report">
-      <div className="report-summary">
-        <div className="report-summary-card">
-          <span className="label">Hoy</span>
-          <span className="value">${report.ventasDia.ingresos}</span>
-        </div>
-        <div className="report-summary-card">
-          <span className="label">Semana</span>
-          <span className="value">${report.ventasSemana.ingresos}</span>
-        </div>
-        <div className="report-summary-card">
-          <span className="label">Mes</span>
-          <span className="value">${report.ventasMes.ingresos}</span>
-        </div>
-      </div>
+      <h3>Top del Dia</h3>
+      {vd.top.length === 0 ? <p className="muted">Sin ventas hoy</p> : vd.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos dia:</span><strong>${vd.ingresos}</strong></div>
 
-      <h3 style={{ margin: 0, fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Dia</h3>
-      {renderTopList(report.ventasDia.top, report.ventasDia.ingresos)}
+      <h3>Productos vendidos hoy</h3>
+      {vdd.length === 0 ? <p className="muted">Sin ventas hoy</p> : vdd.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
 
-      <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top de la Semana</h3>
-      {renderTopList(report.ventasSemana.top, report.ventasSemana.ingresos)}
+      <h3>Top de la Semana</h3>
+      {vs.top.length === 0 ? <p className="muted">Sin ventas esta semana</p> : vs.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos semana:</span><strong>${vs.ingresos}</strong></div>
 
-      <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Mes</h3>
-      {renderTopList(report.ventasMes.top, report.ventasMes.ingresos)}
+      <h3>Top del Mes</h3>
+      {vm.top.length === 0 ? <p className="muted">Sin ventas este mes</p> : vm.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${vm.ingresos}</strong></div>
 
-      {report.menosVendidosSemana?.length > 0 && (
-        <>
-          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (semana)</h3>
-          <div className="report-section">
-            {report.menosVendidosSemana.map((p, i) => (
-              <div className="report-line" key={p.id}>
-                <span><RankBadge i={i} />{p.nombre}</span>
-                <strong>{p.vendidos} uds</strong>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      <h3>Menos vendidos (semana)</h3>
+      {(report.menosVendidosSemana || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosSemana.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
-      {report.menosVendidosMes?.length > 0 && (
-        <>
-          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (mes)</h3>
-          <div className="report-section">
-            {report.menosVendidosMes.map((p, i) => (
-              <div className="report-line" key={p.id}>
-                <span><RankBadge i={i} />{p.nombre}</span>
-                <strong>{p.vendidos} uds</strong>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      <h3>Menos vendidos (mes)</h3>
+      {(report.menosVendidosMes || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosMes.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
 
-      {(report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
-        <>
-          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Alertas de Stock</h3>
-          <div className="report-section">
-            {report.agotados?.map(p => renderStockRow(p, false))}
-            {report.bajoStock?.map(p => renderStockRow(p, true))}
-          </div>
-        </>
-      )}
+      <h3>Productos con bajo stock</h3>
+      {(report.agotados || []).map((p) => <div className="report-line" key={p.id}><span className="error">{p.nombre} (Agotado)</span><strong>{p.cantidad_stock} uds</strong></div>)}
+      {(report.bajoStock || []).map((p) => <div className="report-line" key={p.id}><span className="warning" style={{ padding: "0", border: "0", background: "transparent" }}>{p.nombre}</span><strong>{p.cantidad_stock} uds</strong></div>)}
     </div>
   );
 }
@@ -856,7 +823,7 @@ function ImportPanel({ token, onImported }) {
         <button className="link-button" type="button" onClick={downloadTemplate}><Download size={17} />Plantilla</button>
       </div>
       <form className="upload-line" onSubmit={importFile}>
-        <input name="import-file" type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
         <button disabled={busy || !file}><Upload size={17} />{busy ? "Importando" : "Importar"}</button>
       </form>
       {message && <p className="success">{message}</p>}
@@ -901,7 +868,7 @@ function UsersPanel({ token }) {
     const [userData, roleData] = await Promise.all([api(token, "/usuarios"), api(token, "/roles")]);
     setUsers(userData.users);
     setRoles(roleData.roles);
-    if (!form.rol_id && roleData.roles?.[0]) setForm((x) => ({ ...x, rol_id: roleData.roles[0].id }));
+    if (!form.rol_id && roleData.roles[0]) setForm((x) => ({ ...x, rol_id: roleData.roles[0].id }));
   }
   useEffect(() => { load(); }, []);
 
@@ -922,9 +889,9 @@ function UsersPanel({ token }) {
     <div className="panel">
       <h2>Usuarios</h2>
       <form className="user-form" onSubmit={create}>
-        <input name="user-usuario" placeholder="Usuario" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />
-        <input name="user-password" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        <select name="user-rol_id" value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
+        <input placeholder="Usuario" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />
+        <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <select value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
         <button>Crear</button>
       </form>
       <div className="table">{users.map((user) => <div className="row" key={user.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px auto", alignItems: "center" }}><div><strong>{user.usuario}</strong><span className="muted">{user.rol}</span></div><span>{user.activo ? "Activo" : "Inactivo"}</span><button className="danger" onClick={() => deactivate(user.id)}>Desactivar</button></div>)}</div>
@@ -941,7 +908,7 @@ function RolesPanel({ token }) {
     const data = await api(token, "/roles");
     setRoles(data.roles);
     setPermissions(data.permissions);
-    setSelected((current) => current || data.roles?.[0] || null);
+    setSelected((current) => current || data.roles[0] || null);
   }
   useEffect(() => { load(); }, []);
 
@@ -968,10 +935,10 @@ function RolesPanel({ token }) {
       <div className="role-layout">
         <div className="role-list">{roles.map((role) => <button className={selected?.id === role.id ? "active" : ""} onClick={() => setSelected(role)} key={role.id}>{role.nombre}</button>)}</div>
         {selected && <div className="permissions">
-          <input name="rol-nombre" value={selected.nombre} onChange={(e) => setSelected({ ...selected, nombre: e.target.value })} />
+          <input value={selected.nombre} onChange={(e) => setSelected({ ...selected, nombre: e.target.value })} />
           {modules.map((modulo) => <div className="perm-row" key={modulo}><strong>{modulo}</strong>{ACTIONS.map((accion) => {
             const key = `${modulo}:${accion}`;
-            return <label key={key}><input name={"perm-"+key} type="checkbox" checked={(selected.permisos || []).includes(key)} onChange={() => toggle(key)} />{accion}</label>;
+            return <label key={key}><input type="checkbox" checked={(selected.permisos || []).includes(key)} onChange={() => toggle(key)} />{accion}</label>;
           })}</div>)}
           <button onClick={save}>Guardar rol</button>
         </div>}
@@ -993,9 +960,9 @@ function ImportLogPanel({ token }) {
     <div className="panel">
       <h2>Bitacora de importaciones</h2>
       <div className="filters">
-        <input name="log-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} />
-        <input name="log-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} />
-        <input name="log-producto" placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
+        <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} />
+        <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} />
+        <input placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={load}>Filtrar</button>
       </div>
       <div className="table">{logs.map((log) => <div className="row" key={log.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 160px", alignItems: "center" }}><div><strong>{log.producto_nombre}</strong><span className="muted">{log.archivo_origen} - {log.usuario_admin}</span></div><span>{log.tipo_cambio}</span><span className="muted">{log.fecha_hora}</span></div>)}</div>
@@ -1047,13 +1014,13 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
 
     try {
       const data = await api(token, `/transacciones?${query.toString()}`);
-      const txns = data.transactions || data;
+      const txArr = Array.isArray(data.transactions) ? data.transactions : Array.isArray(data) ? data : [];
       if (isAppend) {
-        setTransactions(prev => [...prev, ...txns]);
+        setTransactions(prev => [...prev, ...txArr]);
       } else {
-        setTransactions(txns);
+        setTransactions(txArr);
       }
-      setHasMore(txns.length === 50);
+      setHasMore(txArr.length === 50);
       if (!isAppend) setPage(1);
       else setPage(p => p + 1);
     } catch (err) {
@@ -1106,9 +1073,9 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
   return (
     <div className="transactions-list">
       <div className="transactions-filters">
-        <input name="tx-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
-        <input name="tx-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
-        <input name="tx-producto" placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
+        <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
+        <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
+        <input placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={() => load(false)}>Filtrar</button>
       </div>
 
@@ -1145,8 +1112,8 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
                             </span>
                           </div>
                           <span className="stock-col">{t.cantidad} uds</span>
-                          {canRevert && (
-                            <button className={"danger revert-btn" + (t.revertida ? " restore-btn" : "")} onClick={() => onRevert(t)} title={t.revertida ? "Restaurar transaccion" : "Revertir transaccion"}>{t.revertida ? "Restaurar" : "Revertir"}</button>
+                          {canRevert && !t.revertida && (
+                            <button className="danger revert-btn" onClick={() => onRevert(t)} title="Revertir transaccion">Revertir</button>
                           )}
                         </div>
                       ))}
@@ -1255,8 +1222,12 @@ function Ganancias({ token }) {
         api(token, `/reportes/ganancias?periodo=${periodo}`),
         api(token, "/reportes/ganancias/evolucion")
       ]);
-      setData(res);
-      setEvolution(evo);
+      setData({
+        totalGanancia: res?.totalGanancia ?? 0,
+        totalIngresos: res?.totalIngresos ?? 0,
+        products: Array.isArray(res?.products) ? res.products : [],
+      });
+      setEvolution(Array.isArray(evo) ? evo : []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -1290,9 +1261,9 @@ function Ganancias({ token }) {
 
       {!loading && (
         <div className="metrics ganancias-metrics">
-          <Metric icon={<TrendingUp />} label="Ganancia total" value={`$${data.totalGanancia.toLocaleString()}`} />
-          <Metric icon={<ShoppingCart />} label="Ingresos totales" value={`$${data.totalIngresos.toLocaleString()}`} />
-          <Metric icon={<Boxes />} label="Productos" value={data.products.length} />
+          <Metric icon={<TrendingUp />} label="Ganancia total" value={`$${(data.totalGanancia ?? 0).toLocaleString()}`} />
+          <Metric icon={<ShoppingCart />} label="Ingresos totales" value={`$${(data.totalIngresos ?? 0).toLocaleString()}`} />
+          <Metric icon={<Boxes />} label="Productos" value={data.products?.length ?? 0} />
         </div>
       )}
 
@@ -1300,18 +1271,18 @@ function Ganancias({ token }) {
         <div className="chart-box">
           <h3>Evolución últimos 30 días</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={evolution} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+            <BarChart data={evolution} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} />
-              <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${v.toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
+               <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${(v ?? 0).toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
               <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {loading ? <p className="muted">Cargando...</p> : data.products.length === 0 ? <p className="muted">Sin datos en este periodo.</p> : (
+      {loading ? <p className="muted">Cargando...</p> : (data.products?.length ?? 0) === 0 ? <p className="muted">Sin datos en este periodo.</p> : (
         <div className="table">
           <div className="profit-header">
             <span>Producto</span>
@@ -1330,16 +1301,16 @@ function Ganancias({ token }) {
                   <strong>{p.nombre}</strong>
                   {sinCosto && <span className="sin-costo">Sin costo registrado</span>}
                 </div>
-                <span className="stock-col">${(p.costo || 0).toLocaleString()}</span>
-                <span className="stock-col">${p.precio.toLocaleString()}</span>
+                <span className="stock-col">${(p.costo ?? 0).toLocaleString()}</span>
+                <span className="stock-col">${(p.precio ?? 0).toLocaleString()}</span>
                 <span className={`stock-col ${perdida ? perdidaCls : ""}`}>
-                  {perdida ? "-" : "+"}${Math.abs(p.ganancia_unitaria).toLocaleString()}
+                  {perdida ? "-" : "+"}${Math.abs(p.ganancia_unitaria ?? 0).toLocaleString()}
                 </span>
                 <span className={`stock-col ${perdida ? perdidaCls : p.margen < 10 ? margenBajoCls : ""}`}>
                   {p.margen}%
                 </span>
                 <span className="stock-col col-ganancia-total">
-                  ${p.ganancia_total.toLocaleString()}
+                  ${(p.ganancia_total ?? 0).toLocaleString()}
                 </span>
               </div>
             );

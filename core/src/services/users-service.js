@@ -239,13 +239,13 @@ export function deactivateUser(id, currentUserId, { client, tenantId } = {}) {
   `).get(id);
 }
 
-export function getSessionUser(user) {
+export function getSessionUser(user, { client, tenantId } = {}) {
   return {
     id: user.id,
     usuario: user.usuario,
     rol: user.rol_nombre || user.rol,
     rol_id: user.rol_id,
-    permisos: listUserPermissions(user.id)
+    permisos: listUserPermissions(user.id, { client, tenantId })
   };
 }
 

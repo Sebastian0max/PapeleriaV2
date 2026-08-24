@@ -7,6 +7,7 @@ services:
     dockerfilePath: ./core/Dockerfile
     autoDeploy: true
     envVars:
+      - key: SUPABASE_DATABASE_URL
       - key: SUPABASE_URL
       - key: SUPABASE_SERVICE_KEY
       - key: JWT_SECRET

@@ -9,7 +9,7 @@ export async function withDb(request, reply) {
 
     const tenantId = request.tenantId;
     if (tenantId) {
-      await client.query("SET LOCAL app.tenant_id = $1", [tenantId]);
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
     }
 
     reply.then(async () => {

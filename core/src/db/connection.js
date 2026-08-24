@@ -1,14 +1,21 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { config } from "../config.js";
 import { runMigrations } from "./migrations.js";
 
 const isPostgres = !!process.env.SUPABASE_DATABASE_URL;
 let db;
+let DatabaseSync;
 
 if (isPostgres) {
   console.log("[db] Postgres mode — use getPool()/getClient()");
+} else {
+  try {
+    const sqlite = await import("node:sqlite");
+    DatabaseSync = sqlite.DatabaseSync;
+  } catch (e) {
+    console.warn("[db] node:sqlite not available, SQLite mode disabled:", e.message);
+  }
 }
 
 // SQLite write-detection keywords
@@ -50,6 +57,11 @@ export function getDb() {
   if (isPostgres) {
     throw new Error(
       "getDb() is not available in Postgres mode. Use getPool()/getClient() from postgres-connection.js."
+    );
+  }
+  if (!DatabaseSync) {
+    throw new Error(
+      "node:sqlite is not available. Requires Node.js 22.5+."
     );
   }
   if (!db) {

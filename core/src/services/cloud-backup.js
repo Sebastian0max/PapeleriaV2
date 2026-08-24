@@ -9,12 +9,20 @@ const BUCKET = "papeleria";
 const DB_OBJECT = "papeleria.db";
 
 let syncEnabled = false;
-let uploadTimer = null;
 let uploading = false;
 let pendingUpload = false;
-let periodicTimer = null;
+let uploadTimer = null;
+let lastUploadAt = 0;
+let lastUploadedSize = -1;
+let lastUploadedMtime = 0;
 
-const PERIODIC_INTERVAL = 15_000;
+// HARD LIMITS to bound outbound bandwidth. The old 15s periodic upload
+// re-sent the whole DB file ~2880 times/month, which caused the huge
+// Render bandwidth bill. Now uploads are debounced, capped at one per
+// minute, and skipped entirely when the DB file did not change.
+const UPLOAD_DEBOUNCE_MS = 10_000;
+const MIN_UPLOAD_INTERVAL_MS = 60_000;
+const FLUSH_MAX_WAIT_MS = 15_000;
 
 function supabaseHeaders() {
   return { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
@@ -52,16 +60,39 @@ export async function downloadDb() {
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
     fs.writeFileSync(config.dbPath, buffer);
+    const st = fs.statSync(config.dbPath);
+    lastUploadedSize = st.size;
+    lastUploadedMtime = st.mtimeMs;
+    lastUploadAt = Date.now();
     console.log(`[cloud-backup] Downloaded DB (${buffer.length} bytes) -> ${config.dbPath}`);
   } else if (res.status === 404 || res.status === 400) {
     console.log("[cloud-backup] No remote DB found. A fresh database will be created.");
   } else { console.warn("[cloud-backup] Failed to download DB:", res.status, await res.text()); }
 }
 
+function dbChangedSinceLastUpload() {
+  if (!fs.existsSync(config.dbPath)) return false;
+  const st = fs.statSync(config.dbPath);
+  return st.size !== lastUploadedSize || st.mtimeMs !== lastUploadedMtime;
+}
+
 async function uploadDb() {
   if (!syncEnabled) return;
   if (!fs.existsSync(config.dbPath)) return;
   if (uploading) { pendingUpload = true; return; }
+
+  // Skip the network round-trip when the DB is unchanged since the last upload.
+  if (lastUploadAt > 0 && !dbChangedSinceLastUpload()) return;
+
+  // Hard cap: never upload more than once per minute, no matter how many
+  // writes happened. Delay the upload to respect the cap.
+  const wait = lastUploadAt + MIN_UPLOAD_INTERVAL_MS - Date.now();
+  if (wait > 0) {
+    if (uploadTimer) clearTimeout(uploadTimer);
+    uploadTimer = setTimeout(() => { uploadTimer = null; uploadDb(); }, wait);
+    return;
+  }
+
   uploading = true;
   try {
     try { getDb().exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch (_) {}
@@ -72,27 +103,38 @@ async function uploadDb() {
       body: bytes
     });
     if (!res.ok) { console.error("[cloud-backup] DB upload failed:", res.status, await res.text()); }
-    else { console.log(`[cloud-backup] DB uploaded (${bytes.length} bytes)`); }
+    else {
+      console.log(`[cloud-backup] DB uploaded (${bytes.length} bytes)`);
+      const st = fs.statSync(config.dbPath);
+      lastUploadedSize = st.size;
+      lastUploadedMtime = st.mtimeMs;
+      lastUploadAt = Date.now();
+    }
   } catch (err) { console.error("[cloud-backup] DB upload error:", err.message); }
   finally { uploading = false; if (pendingUpload) { pendingUpload = false; uploadDb(); } }
 }
 
-export function scheduleDbUpload() { if (!syncEnabled) return; uploadDb(); }
-
-export function startPeriodicBackup() {
+/** Debounced upload: coalesces bursts of writes into a single upload. */
+export function scheduleDbUpload() {
   if (!syncEnabled) return;
-  if (periodicTimer) clearInterval(periodicTimer);
-  periodicTimer = setInterval(uploadDb, PERIODIC_INTERVAL);
-  console.log(`[cloud-backup] Periodic backup every ${PERIODIC_INTERVAL / 1000}s started.`);
+  if (uploadTimer) clearTimeout(uploadTimer);
+  uploadTimer = setTimeout(() => { uploadTimer = null; uploadDb(); }, UPLOAD_DEBOUNCE_MS);
 }
 
 export async function flushOnShutdown() {
   if (!syncEnabled) return;
-  if (periodicTimer) clearInterval(periodicTimer);
+  if (uploadTimer) { clearTimeout(uploadTimer); uploadTimer = null; }
+  const deadline = Date.now() + FLUSH_MAX_WAIT_MS;
   if (uploading) {
-    await new Promise(resolve => { const check = () => { if (!uploading && !pendingUpload) resolve(); else setTimeout(check, 100); }; check(); });
+    await new Promise(resolve => {
+      const check = () => {
+        if ((!uploading && !pendingUpload) || Date.now() > deadline) resolve();
+        else setTimeout(check, 100);
+      };
+      check();
+    });
   }
-  if (!uploading && fs.existsSync(config.dbPath)) { await uploadDb(); }
+  if (!uploading && fs.existsSync(config.dbPath) && dbChangedSinceLastUpload()) { await uploadDb(); }
   console.log("[cloud-backup] Shutdown flush complete.");
 }
 
