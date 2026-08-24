@@ -4,8 +4,6 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: cd core && npm install --omit=dev
-    startCommand: cd core && node src/index.js
     autoDeploy: true
     envVars:
       - key: SUPABASE_DATABASE_URL
