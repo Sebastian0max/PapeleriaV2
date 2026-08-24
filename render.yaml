@@ -4,10 +4,10 @@ services:
     env: docker
     region: oregon
     plan: free
-    dockerfilePath: ./core/Dockerfile
+    dockerfilePath: ./Dockerfile
     autoDeploy: true
     envVars:
       - key: SUPABASE_DATABASE_URL
+      - key: JWT_SECRET
       - key: SUPABASE_URL
       - key: SUPABASE_SERVICE_KEY
-      - key: JWT_SECRET
