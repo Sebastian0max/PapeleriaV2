@@ -14,9 +14,9 @@ export async function resolveTenantId(hostname) {
 
 export async function tenantResolver(request, reply) {
   const hostname = request.hostname;
+  const pool = getPool();
 
   if (hostname.startsWith("localhost") || hostname.startsWith("127.0.0.1") || hostname === "0.0.0.0") {
-    const pool = getPool();
     const { rows } = await pool.query(
       "SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1"
     );
@@ -25,9 +25,13 @@ export async function tenantResolver(request, reply) {
   }
 
   const tenantId = await resolveTenantId(hostname);
-  if (!tenantId) {
-    reply.status(404).send({ error: "Tenant not found" });
+  if (tenantId) {
+    request.tenantId = tenantId;
     return;
   }
-  request.tenantId = tenantId;
+
+  const { rows } = await pool.query(
+    "SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1"
+  );
+  request.tenantId = rows.length > 0 ? rows[0].id : null;
 }
