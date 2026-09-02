@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual de Usuario - Papelería</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: Arial, sans-serif; color: #222; line-height: 1.7; max-width: 800px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 26px; text-align: center; margin-bottom: 4px; }
+.sub { text-align: center; color: #666; font-size: 14px; margin-bottom: 32px; }
+h2 { font-size: 18px; margin: 28px 0 12px; border-bottom: 2px solid #ddd; padding-bottom: 6px; }
+h3 { font-size: 15px; margin: 18px 0 6px; color: #444; }
+p, li { font-size: 14px; margin-bottom: 8px; }
+ul { padding-left: 20px; margin-bottom: 14px; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 14px; font-size: 13px; border-radius: 4px; margin: 14px 0; }
+.step { background: #f5f5f5; border-radius: 6px; padding: 12px 16px; margin: 10px 0; }
+.step strong { display: block; margin-bottom: 4px; }
+.screenshot { background: #e9ecef; border-radius: 6px; padding: 20px; text-align: center; color: #888; font-size: 13px; margin: 10px 0; border: 1px dashed #ccc; }
+.alert { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 14px; font-size: 13px; border-radius: 4px; margin: 14px 0; }
+@media print {
+  body { padding: 20px; font-size: 12px; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 15px; margin-top: 18px; }
+  p, li { font-size: 11px; }
+  .screenshot { display: none; }
+  .no-print { display: none; }
+}
+</style>
+</head>
+<body>
+
+<h1>📋 Manual de Uso Rápido</h1>
+<p class="sub">Sistema de Inventario y Ventas — Papelería</p>
+
+<div class="alert"><strong>Importante:</strong> Todos los precios y costos se manejan en pesos. Usa solo números enteros (sin decimales).</div>
+
+<h2>1️⃣ Cómo agregar un producto</h2>
+<div class="step">
+<strong>Paso 1:</strong> Ve a la pestaña <strong>Inventario</strong>.
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Llena el formulario gris de arriba:
+  <ul>
+    <li><strong>Nombre</strong> — el nombre del producto (ej. "Bolígrafo azul")</li>
+    <li><strong>Unidades</strong> — cuántos tienes en existencia</li>
+    <li><strong>Precio</strong> — a cuánto los vendes</li>
+    <li><strong>Costo</strong> — cuánto te costó a ti cada unidad (opcional, pero importante para ver ganancias)</li>
+  </ul>
+</div>
+<div class="step">
+<strong>Paso 3:</strong> Presiona el botón ➕ (agregar). El producto aparecerá en la tabla.
+</div>
+
+<h2>2️⃣ Cómo hacer una venta</h2>
+<div class="step">
+<strong>Paso 1:</strong> Ve a la pestaña <strong>Transacciones</strong> → sección <strong>Vender</strong>.
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Busca el producto en el menú desplegable y selecciónalo.
+</div>
+<div class="step">
+<strong>Paso 3:</strong> Escribe la cantidad. El sistema calculará el total automáticamente.
+</div>
+<div class="step">
+<strong>Paso 4:</strong> Presiona <strong>Vender</strong>. El stock se descuenta al instante.
+</div>
+<div class="note"><strong>Nota:</strong> Si vendes por debajo del costo, el sistema mostrará una alerta roja. Si el margen de ganancia es menor al 10%, mostrará una alerta amarilla.</div>
+
+<h2>3️⃣ Cómo ver ganancias</h2>
+<div class="step">
+<strong>Paso 1:</strong> Ve a la pestaña <strong>Ganancias</strong>.
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Selecciona el período: <strong>Día</strong>, <strong>Semana</strong> o <strong>Mes</strong>.
+</div>
+<div class="step">
+<strong>Paso 3:</strong> La tabla muestra cada producto con su costo, venta, ganancia por unidad, margen % y ganancia total generada.
+</div>
+<p><strong>Colores:</strong><br>🔴 Rojo = pérdida (vendiendo por debajo del costo)<br>🟡 Amarillo = margen menor al 10%<br>⚪ Sin color = margen saludable</p>
+<p>El <strong>gráfico</strong> de la derecha muestra la evolución de ganancias diarias de los últimos 30 días.</p>
+
+<h2>4️⃣ Cómo anular una venta</h2>
+<div class="step">
+<strong>Paso 1:</strong> En Transacciones, busca la venta en la tabla de Ventas Recientes.
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Presiona el botón 🔄 (revertir). La venta se marcará como anulada y el stock se restablecerá.
+</div>
+<div class="note"><strong>Nota:</strong> Las ventas anuladas no se consideran en los reportes de ganancias.</div>
+
+<h2>5️⃣ Cómo exportar datos</h2>
+<div class="step">
+<strong>Paso 1:</strong> En la barra superior, presiona el botón ⬇️ (descargar).
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Selecciona qué quieres exportar:
+  <ul>
+    <li><strong>Productos (Excel/PDF)</strong> — lista completa del inventario</li>
+    <li><strong>Ventas (Excel/PDF)</strong> — historial de ventas</li>
+    <li><strong>Reportes (Excel)</strong> — resumen de ventas del día y la semana</li>
+  </ul>
+</div>
+
+<h2>6️⃣ Cómo editar un producto</h2>
+<div class="step">
+<strong>Paso 1:</strong> En Inventario, busca el producto en la tabla.
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Presiona el botón ✏️ (lápiz) a la derecha del producto.
+</div>
+<div class="step">
+<strong>Paso 3:</strong> Cambia los campos que necesites (nombre, stock, precio, costo).
+</div>
+<div class="step">
+<strong>Paso 4:</strong> Presiona <strong>Guardar</strong>.
+</div>
+
+<h2>7️⃣ Cómo ajustar stock (entradas/salidas)</h2>
+<div class="step">
+<strong>Paso 1:</strong> En Inventario, busca el producto.
+</div>
+<div class="step">
+<strong>Paso 2:</strong> Presiona ➕ (entrada) o ➖ (salida).
+</div>
+<div class="step">
+<strong>Paso 3:</strong> Escribe la cantidad y confirma.
+</div>
+<p>Esto registra un movimiento sin crear una venta (útil para mermas, ajustes, o inventario inicial).</p>
+
+<hr style="margin: 30px 0 14px;">
+<p style="text-align:center;font-size:12px;color:#888;">Papelería — Sistema de Inventario — v1.0</p>
+<p style="text-align:center;font-size:10px;color:#aaa;" class="no-print">Presiona Ctrl+P para imprimir o guardar como PDF</p>
+
+</body>
+</html>

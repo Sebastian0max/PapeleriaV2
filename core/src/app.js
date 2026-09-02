@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import multipart from "@fastify/multipart";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { authRoutes } from "./routes/auth-routes.js";
 import { exportRoutes } from "./routes/export-routes.js";
@@ -66,6 +67,9 @@ export function buildApp() {
     }
   });
 
+  const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "../public");
+  const mime = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml" };
+
   app.get("/health", async () => ({ ok: true }));
   app.get("/uploads/productos/:file", async (request, reply) => {
     const file = path.basename(request.params.file);
@@ -89,6 +93,22 @@ export function buildApp() {
   }
 
   initSentry(app);
+
+  app.setNotFoundHandler((request, reply) => {
+    const { method, url } = request.raw;
+    if (method === "GET" && publicDir && !/^\/(auth|productos|ventas|transacciones|reportes|usuarios|roles|importaciones|exportar)\b/.test(url) && !url.startsWith("/uploads")) {
+      const urlPath = decodeURIComponent(new URL(url, "http://x").pathname);
+      const requested = urlPath === "/" ? path.join(publicDir, "index.html") : path.join(publicDir, urlPath);
+      const safe = path.normalize(requested).startsWith(path.normalize(publicDir));
+      if (safe && fs.existsSync(requested) && fs.statSync(requested).isFile()) {
+        const ext = path.extname(requested).toLowerCase();
+        return reply.type(mime[ext] || "application/octet-stream").send(fs.createReadStream(requested));
+      }
+      const index = path.join(publicDir, "index.html");
+      if (fs.existsSync(index)) return reply.type("text/html").send(fs.createReadStream(index));
+    }
+    return reply.code(404).send({ message: "Not Found" });
+  });
 
   return app;
 }

@@ -178,4 +178,8 @@ CREATE INDEX IF NOT EXISTS idx_ventas_cliente ON ventas(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_ventas_detalle_venta ON ventas_detalle(venta_id);
 CREATE INDEX IF NOT EXISTS idx_compras_detalle_compra ON compras_detalle(compra_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_tenant_estatus_created ON ventas(tenant_id, estatus, created_at);
+CREATE INDEX IF NOT EXISTS idx_ventas_detalle_producto ON ventas_detalle(tenant_id, producto_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_tenant_created ON transactions(tenant_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_productos_tenant_activo_stock ON productos(tenant_id, activo, stock);
 `;

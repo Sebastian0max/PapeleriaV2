@@ -54,7 +54,7 @@ class ErrorBoundary extends React.Component {
 }
 
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.API_URL || (import.meta.env.PROD ? "https://papeleria-backend-rq7r.onrender.com" : "http://127.0.0.1:4000");
+const API_URL = import.meta.env.VITE_API_URL || import.meta.env.API_URL || (import.meta.env.PROD ? "" : "http://127.0.0.1:4000");
 const ACTIONS = ["ver", "crear", "editar", "eliminar"];
 
 function normalizePath(p) { return '/' + p.replace(/^\/+/, '').replace(/\/+$/, ''); }
