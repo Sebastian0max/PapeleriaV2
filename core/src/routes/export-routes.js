@@ -77,7 +77,7 @@ export async function exportRoutes(app) {
   app.get("/productos/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
     const productos = await queryAll(request.client, request.tenantId,
       request.client
-        ? `SELECT p.id, p.nombre, p.stock AS cantidad_stock, p.precio_venta AS precio, p.costo FROM productos p WHERE p.tenant_id = $1 ORDER BY p.nombre`
+        ? `SELECT p.id, p.nombre, p.stock AS cantidad_stock, p.precio_venta AS precio, p.precio_compra AS costo FROM productos p WHERE p.tenant_id = $1 ORDER BY p.nombre`
         : `SELECT p.id, p.nombre, p.cantidad_stock, p.precio, p.costo FROM productos p WHERE p.en_papelera = 0 ORDER BY p.nombre`,
       request.client ? [request.tenantId] : []
     );
@@ -89,7 +89,7 @@ export async function exportRoutes(app) {
   app.get("/ventas/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
     const ventas = await queryAll(request.client, request.tenantId,
       request.client
-        ? `SELECT v.id, p.nombre AS producto, vd.cantidad, vd.precio_unitario, vd.subtotal AS total, v.created_at AS fecha FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id WHERE v.tenant_id = $1 AND v.estatus = 'completada' ORDER BY v.created_at DESC LIMIT 500`
+        ? `SELECT v.id, p.nombre AS producto, vd.cantidad, vd.precio_unitario, vd.subtotal AS total, TO_CHAR(v.created_at, 'YYYY-MM-DD HH24:MI') AS fecha FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id WHERE v.tenant_id = $1 AND v.estatus = 'completada' ORDER BY v.created_at DESC LIMIT 500`
         : `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 ORDER BY v.fecha DESC LIMIT 500`,
       request.client ? [request.tenantId] : []
     );
