@@ -593,27 +593,49 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
   );
 }
 
+function normalizeText(s) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function SaleForm({ token, products, onDone }) {
+  const [query, setQuery] = useState("");
   const [productoId, setProductoId] = useState("");
   const [cantidad, setCantidad] = useState(1);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [focused, setFocused] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = selectedProduct && cantidad > 0 ? selectedProduct.precio * cantidad : 0;
+  const selectedProduct = useMemo(
+    () => products.find(p => String(p.id) === String(productoId)) || null,
+    [products, productoId]
+  );
 
-  useEffect(() => {
-    const prod = products.find(p => String(p.id) === String(productoId));
-    setSelectedProduct(prod || null);
+  const results = useMemo(() => {
+    const q = normalizeText(query.trim());
+    const list = q
+      ? products.filter(p => normalizeText(p.nombre).includes(q))
+      : products;
+    // Mostrar primero los que tienen stock y son vendibles
+    return [...list].sort((a, b) => Number(b.cantidad_stock || 0) - Number(a.cantidad_stock || 0));
+  }, [products, query]);
+
+  const total = selectedProduct && cantidad > 0 ? (Number(selectedProduct.precio) || 0) * cantidad : 0;
+
+  function pick(p) {
+    setProductoId(p.id);
+    setQuery("");
+    setFocused(false);
     setMessage("");
     setError("");
-  }, [productoId, products]);
+  }
 
   async function submit(event) {
     event.preventDefault();
-    if (!productoId) return;
-    if (!selectedProduct) return;
+    if (!productoId || !selectedProduct) {
+      setError("No se pudo completar la venta: selecciona primero un producto.");
+      return;
+    }
 
     if (!selectedProduct.activo) {
       setError("No se pudo completar la venta: este producto ya no está disponible.");
@@ -625,23 +647,25 @@ function SaleForm({ token, products, onDone }) {
       return;
     }
 
-    if (!cantidad || cantidad <= 0) {
+    const q = cantidad || 0;
+    if (!q || q <= 0) {
       setError("No se pudo completar la venta: la cantidad ingresada no es válida.");
       return;
     }
 
-    if (cantidad > selectedProduct.cantidad_stock) {
+    if (q > Number(selectedProduct.cantidad_stock || 0)) {
       setError(`No se pudo completar la venta: solo hay ${selectedProduct.cantidad_stock} unidades disponibles de este producto.`);
       return;
     }
 
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad }) });
-      setMessage(`Venta exitosa: ${cantidad} unidades de ${selectedProduct.nombre} por $${(total ?? 0).toLocaleString()}`);
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: q }) });
+      setMessage(`Venta exitosa: ${q} unidades de ${selectedProduct.nombre} por $${(total ?? 0).toLocaleString()}`);
       setError("");
       setCantidad(1);
       setProductoId("");
+      setQuery("");
       onDone();
     } catch (err) {
       setError(err.message || "No se pudo completar la venta: hubo un problema de conexión, intenta nuevamente.");
@@ -651,41 +675,84 @@ function SaleForm({ token, products, onDone }) {
     }
   }
 
+  const selected = selectedProduct && (
+    <div className="selected-product">
+      <div>
+        <strong>{selectedProduct.nombre}</strong>
+        <span className="muted">{selectedProduct.cantidad_stock} en stock · ${(selectedProduct.precio ?? 0).toLocaleString()} c/u</span>
+      </div>
+      <button type="button" className="icon-button" title="Quitar seleccion" onClick={() => { setProductoId(""); }}>
+        ✕
+      </button>
+    </div>
+  );
+
   return (
     <form className="sale-form" onSubmit={submit}>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-      <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-        <option value="">Producto</option>
-        {products.map((product) => (
-          <option key={product.id} value={product.id}>
-            {product.nombre}
-          </option>
-        ))}
-      </select>
-      {selectedProduct && (
-        <div className="stock-info">
-          <span><strong>Stock:</strong> {selectedProduct.cantidad_stock} uds</span>
-          <span><strong>Precio:</strong> ${(selectedProduct.precio ?? 0).toLocaleString()} c/u</span>
-        </div>
-      )}
-      <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} />
-      <button title="Vender" disabled={busy}>
-        <ShoppingCart size={18} />
-      </button>
+
+      <div className="product-picker">
+        <Search size={16} className="picker-icon" />
+        <input
+          placeholder="Buscar producto para vender..."
+          value={query}
+          autoComplete="off"
+          onChange={(e) => { setQuery(e.target.value); if (!productoId) setProductoId(""); }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+        />
+        {focused && query.trim() === "" && results.length > 0 && (
+          <ul className="picker-dropdown">
+            {results.slice(0, 20).map(p => (
+              <li key={p.id} onMouseDown={() => pick(p)}>
+                <span>{p.nombre}</span>
+                <span className="picker-stock">{Number(p.cantidad_stock || 0)} uds · ${(p.precio ?? 0).toLocaleString()}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {focused && query.trim() !== "" && (
+          <ul className="picker-dropdown">
+            {results.length === 0 && <li className="picker-empty">Sin resultados para "{query}"</li>}
+            {results.slice(0, 20).map(p => (
+              <li key={p.id} onMouseDown={() => pick(p)}>
+                <span>{p.nombre}</span>
+                <span className="picker-stock">{Number(p.cantidad_stock || 0)} uds · ${(p.precio ?? 0).toLocaleString()}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {selected}
+
+      <div className="sale-quantity">
+        <input
+          type="number"
+          min="1"
+          value={cantidad}
+          disabled={!productoId}
+          onChange={(e) => setCantidad(Number(e.target.value))}
+        />
+        <button type="submit" title="Vender" disabled={busy || !productoId}>
+          <ShoppingCart size={18} />
+        </button>
+      </div>
+
       {selectedProduct && cantidad > 0 && (
         <div className="stock-info total-display">
            Total a cobrar: <span>${(total ?? 0).toLocaleString()}</span>
         </div>
       )}
-      {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
+      {selectedProduct && (Number(selectedProduct.costo) || 0) > Number(selectedProduct.precio) && (
         <div className="sale-alert">
           ⚠️ Este producto se vende por debajo de su costo (${(selectedProduct.costo ?? 0).toLocaleString()})
         </div>
       )}
-      {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
+      {selectedProduct && (Number(selectedProduct.costo) || 0) > 0 && Number(selectedProduct.costo) <= Number(selectedProduct.precio) && (Number(selectedProduct.precio) - Number(selectedProduct.costo)) / Number(selectedProduct.precio) < 0.1 && (
         <div className="sale-alert">
-          ⚠️ Margen bajo: {(100 * (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio).toFixed(1)}% de ganancia
+          ⚠️ Margen bajo: {(100 * (Number(selectedProduct.precio) - Number(selectedProduct.costo)) / Number(selectedProduct.precio)).toFixed(1)}% de ganancia
         </div>
       )}
     </form>
