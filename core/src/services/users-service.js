@@ -239,17 +239,17 @@ export function deactivateUser(id, currentUserId, { client, tenantId } = {}) {
   `).get(id);
 }
 
-export function getSessionUser(user, { client, tenantId } = {}) {
+export async function getSessionUser(user, { client, tenantId } = {}) {
   return {
     id: user.id,
     usuario: user.usuario,
     rol: user.rol_nombre || user.rol,
     rol_id: user.rol_id,
-    permisos: listUserPermissions(user.id, { client, tenantId })
+    permisos: await listUserPermissions(user.id, { client, tenantId })
   };
 }
 
-export function getUserSessionById(id, { client, tenantId } = {}) {
+export async function getUserSessionById(id, { client, tenantId } = {}) {
   if (client) return getUserSessionByIdPostgres(client, tenantId, id);
   const user = getDb().prepare(`
     SELECT u.*, COALESCE(r.nombre, u.rol) AS rol_nombre
