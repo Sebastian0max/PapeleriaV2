@@ -16,6 +16,7 @@ export async function roleRoutes(app) {
   });
 
   app.put("/:id", { preHandler: [app.requireAdminPermission("roles", "editar")] }, async (request) => {
-    return { role: await updateRole(Number(request.params.id), roleSchema.parse(request.body), { client: request.client, tenantId: request.tenantId }) };
+    const id = request.client ? request.params.id : Number(request.params.id);
+    return { role: await updateRole(id, roleSchema.parse(request.body), { client: request.client, tenantId: request.tenantId }) };
   });
 }

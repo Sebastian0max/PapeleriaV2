@@ -30,11 +30,13 @@ export async function productRoutes(app) {
   });
 
   app.put("/:id", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
-    return { product: await updateProduct(Number(request.params.id), productSchema.partial().parse(request.body), request.user.id, { client: request.client, tenantId: request.tenantId }) };
+    const id = request.client ? request.params.id : Number(request.params.id);
+    return { product: await updateProduct(id, productSchema.partial().parse(request.body), request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.delete("/:id", { preHandler: [app.requireAdminPermission("productos", "eliminar")] }, async (request) => {
-    const result = await deleteProduct(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
+    const id = request.client ? request.params.id : Number(request.params.id);
+    const result = await deleteProduct(id, request.user.id, { client: request.client, tenantId: request.tenantId });
     return { ...result, message: "Producto movido a la papelera." };
   });
 
@@ -43,7 +45,8 @@ export async function productRoutes(app) {
   });
 
   app.post("/:id/restaurar", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
-    return await restoreProduct(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
+    const id = request.client ? request.params.id : Number(request.params.id);
+    return await restoreProduct(id, request.user.id, { client: request.client, tenantId: request.tenantId });
   });
 
   app.post("/purgar", { preHandler: [app.requireAdminPermission("productos", "eliminar")] }, async (request) => {
@@ -52,11 +55,13 @@ export async function productRoutes(app) {
 
   app.post("/:id/imagen", { preHandler: [app.requireAdminPermission("productos", "editar")] }, async (request) => {
     const file = await request.file();
-    return { product: await updateProductImage(Number(request.params.id), file, { client: request.client, tenantId: request.tenantId }) };
+    const id = request.client ? request.params.id : Number(request.params.id);
+    return { product: await updateProductImage(id, file, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.post("/:id/movimientos", { preHandler: [app.requireAdminPermission("stock", "crear")] }, async (request) => {
     const input = movementSchema.parse(request.body);
-    return { product: await updateStock({ productoId: Number(request.params.id), tipo: input.tipo, cantidad: input.cantidad, usuarioId: request.user.id, nota: input.nota, client: request.client, tenantId: request.tenantId }) };
+    const id = request.client ? request.params.id : Number(request.params.id);
+    return { product: await updateStock({ productoId: id, tipo: input.tipo, cantidad: input.cantidad, usuarioId: request.user.id, nota: input.nota, client: request.client, tenantId: request.tenantId }) };
   });
 }

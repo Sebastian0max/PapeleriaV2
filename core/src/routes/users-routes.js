@@ -4,7 +4,7 @@ import { createUser, deactivateUser, listUsers, updateUser } from "../services/u
 const userSchema = z.object({
   usuario: z.string().min(2),
   password: z.string().min(6).optional(),
-  rol_id: z.coerce.number().int().positive(),
+  rol_id: z.union([z.number().int().positive(), z.string().min(1)]),
   activo: z.boolean().default(true)
 });
 
@@ -22,11 +22,13 @@ export async function userRoutes(app) {
   });
 
   app.put("/:id", { preHandler: [app.requireAdminPermission("usuarios", "editar")] }, async (request) => {
-    return { user: await updateUser(Number(request.params.id), userSchema.parse(request.body), request.user.id, { client: request.client, tenantId: request.tenantId }) };
+    const id = request.client ? request.params.id : Number(request.params.id);
+    return { user: await updateUser(id, userSchema.parse(request.body), request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 
   app.delete("/:id", { preHandler: [app.requireAdminPermission("usuarios", "eliminar")] }, async (request) => {
-    const user = await deactivateUser(Number(request.params.id), request.user.id, { client: request.client, tenantId: request.tenantId });
+    const id = request.client ? request.params.id : Number(request.params.id);
+    const user = await deactivateUser(id, request.user.id, { client: request.client, tenantId: request.tenantId });
     return { user, deactivated: true };
   });
 }

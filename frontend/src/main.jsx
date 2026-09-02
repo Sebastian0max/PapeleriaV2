@@ -594,7 +594,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
 }
 
 function SaleForm({ token, products, onDone }) {
-  const [productoId, setProductoId] = useState(0);
+  const [productoId, setProductoId] = useState("");
   const [cantidad, setCantidad] = useState(1);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [message, setMessage] = useState("");
@@ -604,7 +604,7 @@ function SaleForm({ token, products, onDone }) {
   const total = selectedProduct && cantidad > 0 ? selectedProduct.precio * cantidad : 0;
 
   useEffect(() => {
-    const prod = products.find(p => p.id === productoId);
+    const prod = products.find(p => String(p.id) === String(productoId));
     setSelectedProduct(prod || null);
     setMessage("");
     setError("");
@@ -655,8 +655,8 @@ function SaleForm({ token, products, onDone }) {
     <form className="sale-form" onSubmit={submit}>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-      <select value={productoId} onChange={(e) => setProductoId(Number(e.target.value))}>
-        <option value={0}>Producto</option>
+      <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
+        <option value="">Producto</option>
         {products.map((product) => (
           <option key={product.id} value={product.id}>
             {product.nombre}
@@ -874,7 +874,7 @@ function UsersPanel({ token }) {
 
   async function create(event) {
     event.preventDefault();
-    await api(token, "/usuarios", { method: "POST", body: JSON.stringify({ ...form, rol_id: Number(form.rol_id) }) });
+    await api(token, "/usuarios", { method: "POST", body: JSON.stringify({ ...form, rol_id: form.rol_id }) });
     setForm({ usuario: "", password: "", rol_id: roles[0]?.id || "" });
     load();
   }
