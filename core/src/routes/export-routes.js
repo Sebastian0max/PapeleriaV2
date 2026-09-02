@@ -30,7 +30,7 @@ export async function exportRoutes(app) {
   app.get("/ventas", { preHandler: [app.authenticate] }, async (request, reply) => {
     const ventas = await queryAll(request.client, request.tenantId,
       request.client
-        ? `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.created_at AS fecha, u.usuario AS vendedor FROM ventas v JOIN productos p ON p.id = v.producto_id LEFT JOIN usuarios u ON u.id = v.usuario_id WHERE v.anulada = false AND v.tenant_id = $1 ORDER BY v.created_at DESC`
+        ? `SELECT v.id, v.folio, p.nombre AS producto, vd.cantidad, vd.precio_unitario, vd.subtotal AS total, v.created_at AS fecha, u.nombre AS vendedor FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id LEFT JOIN users u ON u.id = v.user_id WHERE v.tenant_id = $1 AND v.estatus = 'completada' ORDER BY v.created_at DESC`
         : `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha, u.usuario AS vendedor FROM ventas v JOIN productos p ON p.id = v.producto_id LEFT JOIN usuarios u ON u.id = v.usuario_id WHERE v.anulada = 0 ORDER BY v.fecha DESC`,
       request.client ? [request.tenantId] : []
     );
@@ -52,12 +52,12 @@ export async function exportRoutes(app) {
     let ventasHoy, ventasSemana;
     if (request.client) {
       const { rows: r1 } = await request.client.query(
-        `SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND date(v.created_at) = $1 AND v.tenant_id = $2 GROUP BY p.id ORDER BY cantidad DESC`,
+        `SELECT p.nombre, SUM(vd.cantidad) AS cantidad, SUM(vd.subtotal) AS total FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id WHERE v.tenant_id = $2 AND v.estatus = 'completada' AND date(v.created_at) = $1 GROUP BY p.id, p.nombre ORDER BY cantidad DESC`,
         [hoy, request.tenantId]
       );
       ventasHoy = r1;
       const { rows: r2 } = await request.client.query(
-        `SELECT p.nombre, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND date(v.created_at) >= $1 AND v.tenant_id = $2 GROUP BY p.id ORDER BY cantidad DESC`,
+        `SELECT p.nombre, SUM(vd.cantidad) AS cantidad, SUM(vd.subtotal) AS total FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id WHERE v.tenant_id = $2 AND v.estatus = 'completada' AND date(v.created_at) >= $1 GROUP BY p.id, p.nombre ORDER BY cantidad DESC`,
         [semana, request.tenantId]
       );
       ventasSemana = r2;
@@ -89,7 +89,7 @@ export async function exportRoutes(app) {
   app.get("/ventas/pdf", { preHandler: [app.authenticate] }, async (request, reply) => {
     const ventas = await queryAll(request.client, request.tenantId,
       request.client
-        ? `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.created_at AS fecha FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND v.tenant_id = $1 ORDER BY v.created_at DESC LIMIT 500`
+        ? `SELECT v.id, p.nombre AS producto, vd.cantidad, vd.precio_unitario, vd.subtotal AS total, v.created_at AS fecha FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id WHERE v.tenant_id = $1 AND v.estatus = 'completada' ORDER BY v.created_at DESC LIMIT 500`
         : `SELECT v.id, p.nombre AS producto, v.cantidad, v.precio_unitario, v.total, v.fecha FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 ORDER BY v.fecha DESC LIMIT 500`,
       request.client ? [request.tenantId] : []
     );
@@ -105,7 +105,7 @@ export async function exportRoutes(app) {
       : periodo === "mes" ? new Date(Date.now() - 30 * 864e5).toISOString().split("T")[0] : hoy;
     const ganancias = await queryAll(request.client, request.tenantId,
       request.client
-        ? `SELECT p.nombre, p.costo, v.precio_unitario, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = false AND date(v.created_at) >= $1 AND date(v.created_at) <= $2 AND v.tenant_id = $3 GROUP BY p.id ORDER BY p.nombre`
+        ? `SELECT p.nombre, p.precio_compra::NUMERIC AS costo, vd.precio_unitario, SUM(vd.cantidad) AS cantidad, SUM(vd.subtotal) AS total FROM ventas v JOIN ventas_detalle vd ON vd.venta_id = v.id JOIN productos p ON p.id = vd.producto_id WHERE v.tenant_id = $3 AND v.estatus = 'completada' AND date(v.created_at) >= $1 AND date(v.created_at) <= $2 GROUP BY p.id, p.nombre, p.precio_compra, vd.precio_unitario ORDER BY p.nombre`
         : `SELECT p.nombre, p.costo, v.precio_unitario, SUM(v.cantidad) AS cantidad, SUM(v.total) AS total FROM ventas v JOIN productos p ON p.id = v.producto_id WHERE v.anulada = 0 AND date(v.fecha) >= ? AND date(v.fecha) <= ? GROUP BY p.id ORDER BY p.nombre`,
       request.client ? [inicio, hoy, request.tenantId] : [inicio, hoy]
     );

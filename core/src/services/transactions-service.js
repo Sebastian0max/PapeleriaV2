@@ -80,6 +80,15 @@ async function revertTransactionPostgres(client, tenantId, { movimientoId, usuar
       [delta, tx.referencia_id, tenantId]
     );
   }
+  if (tx.tipo === 'venta' && tx.descripcion) {
+    const folio = String(tx.descripcion).replace(/^Venta\s+/, "");
+    if (folio && folio !== String(tx.descripcion)) {
+      await client.query(
+        `UPDATE ventas SET estatus = 'anulada' WHERE tenant_id = $1 AND folio = $2 AND estatus = 'completada'`,
+        [tenantId, folio]
+      );
+    }
+  }
   await client.query(
     `UPDATE transactions SET revertida = true, revertida_por = $1, motivo_reversion = $2 WHERE id = $3 AND tenant_id = $4`,
     [usuarioId, motivo || null, movimientoId, tenantId]
@@ -124,6 +133,12 @@ export function revertTransaction({ movimientoId, usuarioId, motivo }, { client,
     } else if (tx.tipo === "entrada") {
       db.prepare("UPDATE productos SET cantidad_stock = cantidad_stock - ? WHERE id = ?")
         .run(tx.cantidad, tx.producto_id);
+    }
+    if (tx.tipo === "venta") {
+      const match = /Venta #(\d+)/.exec(tx.nota || "");
+      if (match) {
+        db.prepare("UPDATE ventas SET anulada = 1 WHERE id = ? AND anulada = 0").run(Number(match[1]));
+      }
     }
     db.prepare("UPDATE movimientos SET revertida = 1, revertida_por = ?, motivo_reversion = ? WHERE id = ?")
       .run(usuarioId, motivo || null, movimientoId);

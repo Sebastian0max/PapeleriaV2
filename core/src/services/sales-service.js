@@ -68,16 +68,19 @@ async function createSalePostgres(client, tenantId, { productoId, cantidad, usua
 
 async function listSalesPostgres(client, tenantId) {
   const { rows } = await client.query(
-    `SELECT v.*, p.nombre AS producto_nombre, u.nombre AS usuario
+    `SELECT v.id, v.folio, v.user_id, v.total, v.created_at AS fecha, v.estatus,
+            vd.producto_id, vd.cantidad, vd.precio_unitario,
+            p.nombre AS producto_nombre, u.nombre AS usuario
      FROM ventas v
-     JOIN productos p ON p.id = ANY(SELECT producto_id FROM ventas_detalle WHERE venta_id = v.id)
+     JOIN ventas_detalle vd ON vd.venta_id = v.id
+     JOIN productos p ON p.id = vd.producto_id
      LEFT JOIN users u ON u.id = v.user_id
      WHERE v.tenant_id = $1 AND v.estatus = 'completada'
      ORDER BY v.created_at DESC
      LIMIT 100`,
     [tenantId]
   );
-  return rows.map(r => mapVentaRow({ ...r, producto_id: r.id }));
+  return rows.map(mapVentaRow);
 }
 
 async function deleteSalePostgres(client, tenantId, ventaId, usuarioId) {
@@ -88,6 +91,11 @@ async function deleteSalePostgres(client, tenantId, ventaId, usuarioId) {
   if (!venta[0]) {
     const error = new Error("Venta no encontrada");
     error.statusCode = 404;
+    throw error;
+  }
+  if (venta[0].estatus === "anulada") {
+    const error = new Error("La venta ya esta anulada");
+    error.statusCode = 400;
     throw error;
   }
   const { rows: detalle } = await client.query(

@@ -3,7 +3,7 @@ import { getDb } from "../db/connection.js";
 // ── Postgres helpers ──────────────────────────────────────────────
 
 async function getStockReportPostgres(client, tenantId) {
-  const [totals, ventasDiaTop, ventasDiaIngresos, ventasDiaDetalle, ventasSemanaTop, ventasSemanaIngresos, ventasMesTop, ventasMesIngresos, menosVendidosSemana, menosVendidosMes, agotados, bajoStock] = await Promise.all([
+  const [totals, ventasDiaTop, ingresos, ventasDiaDetalle, ventasSemanaTop, ventasMesTop, menosVendidosSemana, menosVendidosMes, agotados, bajoStock] = await Promise.all([
     client.query(
       `SELECT COUNT(*)::INTEGER AS total_productos,
               COALESCE(SUM(stock), 0) AS stock_total,
@@ -19,9 +19,11 @@ async function getStockReportPostgres(client, tenantId) {
       [tenantId]
     ),
     client.query(
-      `SELECT COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
+      `SELECT COALESCE(SUM(vd.subtotal) FILTER (WHERE DATE(v.created_at) = CURRENT_DATE), 0)::NUMERIC(14,2) AS dia,
+              COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at >= DATE_TRUNC('week', NOW())), 0)::NUMERIC(14,2) AS semana,
+              COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at >= DATE_TRUNC('month', NOW())), 0)::NUMERIC(14,2) AS mes
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id
-       WHERE vd.tenant_id = $1 AND DATE(v.created_at) = CURRENT_DATE AND v.estatus = 'completada'`,
+       WHERE vd.tenant_id = $1 AND v.estatus = 'completada'`,
       [tenantId]
     ),
     client.query(
@@ -39,12 +41,6 @@ async function getStockReportPostgres(client, tenantId) {
       [tenantId]
     ),
     client.query(
-      `SELECT COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
-       FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('week', NOW()) AND v.estatus = 'completada'`,
-      [tenantId]
-    ),
-    client.query(
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
        WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('month', NOW()) AND v.estatus = 'completada'
@@ -52,23 +48,23 @@ async function getStockReportPostgres(client, tenantId) {
       [tenantId]
     ),
     client.query(
-      `SELECT COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
-       FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('month', NOW()) AND v.estatus = 'completada'`,
+      `SELECT p.id, p.nombre,
+              COALESCE(SUM(CASE WHEN v.estatus = 'completada' THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
+       FROM productos p
+       LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id AND vd.tenant_id = p.tenant_id
+       LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at >= DATE_TRUNC('week', NOW())
+       WHERE p.tenant_id = $1 AND p.activo = TRUE AND p.stock > 0
+       GROUP BY p.id, p.nombre ORDER BY vendidos ASC, p.nombre ASC LIMIT 5`,
       [tenantId]
     ),
     client.query(
-      `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS vendidos
-       FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('week', NOW()) AND v.estatus = 'completada'
-       GROUP BY p.id, p.nombre ORDER BY vendidos ASC LIMIT 5`,
-      [tenantId]
-    ),
-    client.query(
-      `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS vendidos
-       FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('month', NOW()) AND v.estatus = 'completada'
-       GROUP BY p.id, p.nombre ORDER BY vendidos ASC LIMIT 5`,
+      `SELECT p.id, p.nombre,
+              COALESCE(SUM(CASE WHEN v.estatus = 'completada' THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
+       FROM productos p
+       LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id AND vd.tenant_id = p.tenant_id
+       LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at >= DATE_TRUNC('month', NOW())
+       WHERE p.tenant_id = $1 AND p.activo = TRUE AND p.stock > 0
+       GROUP BY p.id, p.nombre ORDER BY vendidos ASC, p.nombre ASC LIMIT 5`,
       [tenantId]
     ),
     client.query(
@@ -81,12 +77,13 @@ async function getStockReportPostgres(client, tenantId) {
     ),
   ]);
 
+  const inr = ingresos.rows[0] || {};
   return {
     ...totals.rows[0],
-    ventasDia: { top: ventasDiaTop.rows, ingresos: Number(ventasDiaIngresos.rows[0]?.ingresos) || 0 },
+    ventasDia: { top: ventasDiaTop.rows, ingresos: Number(inr.dia) || 0 },
     ventasDiaDetalle: ventasDiaDetalle.rows,
-    ventasSemana: { top: ventasSemanaTop.rows, ingresos: Number(ventasSemanaIngresos.rows[0]?.ingresos) || 0 },
-    ventasMes: { top: ventasMesTop.rows, ingresos: Number(ventasMesIngresos.rows[0]?.ingresos) || 0 },
+    ventasSemana: { top: ventasSemanaTop.rows, ingresos: Number(inr.semana) || 0 },
+    ventasMes: { top: ventasMesTop.rows, ingresos: Number(inr.mes) || 0 },
     menosVendidosSemana: menosVendidosSemana.rows,
     menosVendidosMes: menosVendidosMes.rows,
     agotados: agotados.rows,
@@ -199,16 +196,16 @@ export function getStockReport({ client, tenantId } = {}) {
     SELECT COALESCE(SUM(total), 0) AS ingresos FROM ventas WHERE anulada = 0 AND fecha >= DATE('now', 'start of month')
   `).get().ingresos || 0;
   const menosVendidosSemana = db.prepare(`
-    SELECT p.id, p.nombre, SUM(v.cantidad) AS vendidos
-    FROM ventas v JOIN productos p ON p.id = v.producto_id
-    WHERE v.anulada = 0 AND v.fecha >= DATE('now', '-7 days')
-    GROUP BY p.id, p.nombre ORDER BY vendidos ASC LIMIT 5
+    SELECT p.id, p.nombre, COALESCE(SUM(CASE WHEN v.anulada = 0 THEN v.cantidad ELSE 0 END), 0) AS vendidos
+    FROM productos p LEFT JOIN ventas v ON v.producto_id = p.id AND v.fecha >= DATE('now', '-7 days')
+    WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
+    GROUP BY p.id, p.nombre ORDER BY vendidos ASC, p.nombre ASC LIMIT 5
   `).all();
   const menosVendidosMes = db.prepare(`
-    SELECT p.id, p.nombre, SUM(v.cantidad) AS vendidos
-    FROM ventas v JOIN productos p ON p.id = v.producto_id
-    WHERE v.anulada = 0 AND v.fecha >= DATE('now', 'start of month')
-    GROUP BY p.id, p.nombre ORDER BY vendidos ASC LIMIT 5
+    SELECT p.id, p.nombre, COALESCE(SUM(CASE WHEN v.anulada = 0 THEN v.cantidad ELSE 0 END), 0) AS vendidos
+    FROM productos p LEFT JOIN ventas v ON v.producto_id = p.id AND v.fecha >= DATE('now', 'start of month')
+    WHERE p.activo = 1 AND p.en_papelera = 0 AND p.cantidad_stock > 0
+    GROUP BY p.id, p.nombre ORDER BY vendidos ASC, p.nombre ASC LIMIT 5
   `).all();
   const agotados = db.prepare(`
     SELECT id, nombre, cantidad_stock FROM productos WHERE activo = 1 AND en_papelera = 0 AND cantidad_stock = 0 ORDER BY nombre
