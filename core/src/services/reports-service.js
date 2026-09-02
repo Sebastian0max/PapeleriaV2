@@ -1,5 +1,16 @@
 import { getDb } from "../db/connection.js";
 
+// Excludes sales whose sale-transaction was reverted (cancelled), regardless of
+// ventas.estatus, so cancelled sales never count in reports even if the status
+// flag drifted out of sync. Relies on the ventas join alias `v` and $1 = tenant_id.
+const NOT_REVERTED_SALE = `AND NOT EXISTS (
+  SELECT 1 FROM transactions tx
+  WHERE tx.tenant_id = $1
+    AND tx.tipo = 'venta'
+    AND tx.descripcion = 'Venta ' || v.folio
+    AND tx.revertida = TRUE
+)`;
+
 // ── Postgres helpers ──────────────────────────────────────────────
 
 async function getStockReportPostgres(client, tenantId) {
@@ -15,6 +26,7 @@ async function getStockReportPostgres(client, tenantId) {
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
        WHERE vd.tenant_id = $1 AND DATE(v.created_at) = CURRENT_DATE AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}
        GROUP BY p.id, p.nombre ORDER BY cantidad DESC LIMIT 5`,
       [tenantId]
     ),
@@ -23,13 +35,15 @@ async function getStockReportPostgres(client, tenantId) {
               COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at >= DATE_TRUNC('week', NOW())), 0)::NUMERIC(14,2) AS semana,
               COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at >= DATE_TRUNC('month', NOW())), 0)::NUMERIC(14,2) AS mes
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id
-       WHERE vd.tenant_id = $1 AND v.estatus = 'completada'`,
+       WHERE vd.tenant_id = $1 AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}`,
       [tenantId]
     ),
     client.query(
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
        WHERE vd.tenant_id = $1 AND DATE(v.created_at) = CURRENT_DATE AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}
        GROUP BY p.id, p.nombre ORDER BY p.nombre`,
       [tenantId]
     ),
@@ -37,6 +51,7 @@ async function getStockReportPostgres(client, tenantId) {
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
        WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('week', NOW()) AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}
        GROUP BY p.id, p.nombre ORDER BY cantidad DESC LIMIT 5`,
       [tenantId]
     ),
@@ -44,12 +59,17 @@ async function getStockReportPostgres(client, tenantId) {
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
        WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('month', NOW()) AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}
        GROUP BY p.id, p.nombre ORDER BY cantidad DESC LIMIT 5`,
       [tenantId]
     ),
     client.query(
       `SELECT p.id, p.nombre,
-              COALESCE(SUM(CASE WHEN v.estatus = 'completada' THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
+              COALESCE(SUM(CASE WHEN v.estatus = 'completada' AND NOT EXISTS (
+                SELECT 1 FROM transactions tx
+                WHERE tx.tenant_id = p.tenant_id AND tx.tipo = 'venta'
+                  AND tx.descripcion = 'Venta ' || v.folio AND tx.revertida = TRUE
+              ) THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
        FROM productos p
        LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id AND vd.tenant_id = p.tenant_id
        LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at >= DATE_TRUNC('week', NOW())
@@ -59,7 +79,11 @@ async function getStockReportPostgres(client, tenantId) {
     ),
     client.query(
       `SELECT p.id, p.nombre,
-              COALESCE(SUM(CASE WHEN v.estatus = 'completada' THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
+              COALESCE(SUM(CASE WHEN v.estatus = 'completada' AND NOT EXISTS (
+                SELECT 1 FROM transactions tx
+                WHERE tx.tenant_id = p.tenant_id AND tx.tipo = 'venta'
+                  AND tx.descripcion = 'Venta ' || v.folio AND tx.revertida = TRUE
+              ) THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
        FROM productos p
        LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id AND vd.tenant_id = p.tenant_id
        LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at >= DATE_TRUNC('month', NOW())
@@ -102,7 +126,8 @@ async function getProfitReportPostgres(client, tenantId, periodo) {
        FROM ventas_detalle vd
        JOIN productos p ON p.id = vd.producto_id
        JOIN ventas v ON v.id = vd.venta_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - $2::INTERVAL AND v.estatus = 'completada'`,
+       WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - $2::INTERVAL AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}`,
       [tenantId, interval]
     ),
     client.query(
@@ -119,6 +144,7 @@ async function getProfitReportPostgres(client, tenantId, periodo) {
        JOIN productos p ON p.id = vd.producto_id
        JOIN ventas v ON v.id = vd.venta_id
        WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - $2::INTERVAL AND v.estatus = 'completada'
+       ${NOT_REVERTED_SALE}
        GROUP BY p.id, p.nombre, p.precio_compra, p.precio_venta
        ORDER BY ganancia_total DESC`,
       [tenantId, interval]
@@ -145,6 +171,7 @@ async function getProfitEvolutionPostgres(client, tenantId) {
      JOIN productos p ON p.id = vd.producto_id
      JOIN ventas v ON v.id = vd.venta_id
      WHERE vd.tenant_id = $1 AND v.created_at >= NOW() - INTERVAL '30 days' AND v.estatus = 'completada'
+     ${NOT_REVERTED_SALE}
      GROUP BY DATE(v.created_at) ORDER BY dia`,
     [tenantId]
   );

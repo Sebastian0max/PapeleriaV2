@@ -76,6 +76,11 @@ async function listSalesPostgres(client, tenantId) {
      JOIN productos p ON p.id = vd.producto_id
      LEFT JOIN users u ON u.id = v.user_id
      WHERE v.tenant_id = $1 AND v.estatus = 'completada'
+       AND NOT EXISTS (
+         SELECT 1 FROM transactions tx
+         WHERE tx.tenant_id = $1 AND tx.tipo = 'venta'
+           AND tx.descripcion = 'Venta ' || v.folio AND tx.revertida = TRUE
+       )
      ORDER BY v.created_at DESC
      LIMIT 100`,
     [tenantId]
