@@ -2,25 +2,13 @@ import { getDb } from "../db/connection.js";
 
 // ── Postgres helpers ──────────────────────────────────────────────
 
-function mapTransactionRow(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    producto_id: row.referencia_id,
-    tipo: row.tipo,
-    cantidad: Math.abs(Number(row.monto)),
-    usuario_id: row.user_id,
-    fecha: row.created_at,
-    nota: row.descripcion,
-    revertida: 0,
-    producto_nombre: row.producto_nombre || null,
-  };
-}
-
 async function listTransactionsPostgres(client, tenantId, query = {}) {
   let sql = `
-    SELECT t.*
+    SELECT t.*, p.nombre AS producto_nombre, u.nombre AS usuario_nombre, ru.nombre AS reverter_nombre
     FROM transactions t
+    LEFT JOIN productos p ON p.id = t.referencia_id AND t.referencia_tipo = 'producto'
+    LEFT JOIN users u ON u.id = t.user_id
+    LEFT JOIN users ru ON ru.id = t.revertida_por
     WHERE t.tenant_id = $1
   `;
   const params = [tenantId];
@@ -56,32 +44,41 @@ async function listTransactionsPostgres(client, tenantId, query = {}) {
   return { transactions: rows.map(r => ({
     id: r.id,
     producto_id: r.referencia_id,
-    producto_nombre: null,
+    producto_nombre: r.producto_nombre || null,
     tipo: r.tipo,
     cantidad: Math.abs(Number(r.monto)),
     fecha: r.created_at,
     nota: r.descripcion,
-    usuario_nombre: null,
+    usuario_id: r.user_id,
+    usuario_nombre: r.usuario_nombre || null,
     revertida: r.revertida,
-    revertida_por_usuario: null,
+    revertida_por_usuario: r.reverter_nombre || null,
     motivo_reversion: r.motivo_reversion || null,
   })) };
 }
 
 async function revertTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo }) {
-  const { rows: tx } = await client.query(
+  const { rows: txRow } = await client.query(
     'SELECT * FROM transactions WHERE id = $1 AND tenant_id = $2',
     [movimientoId, tenantId]
   );
-  if (!tx[0]) {
+  const tx = txRow[0];
+  if (!tx) {
     const error = new Error("Transacción no encontrada");
     error.statusCode = 404;
     throw error;
   }
-  if (tx[0].revertida) {
+  if (tx.revertida) {
     const error = new Error("La transacción ya está cancelada");
     error.statusCode = 400;
     throw error;
+  }
+  if (tx.referencia_id && tx.referencia_tipo === 'producto') {
+    const delta = tx.tipo === 'venta' || tx.tipo === 'salida' ? tx.monto : -tx.monto;
+    await client.query(
+      `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+      [delta, tx.referencia_id, tenantId]
+    );
   }
   await client.query(
     `UPDATE transactions SET revertida = true, revertida_por = $1, motivo_reversion = $2 WHERE id = $3 AND tenant_id = $4`,

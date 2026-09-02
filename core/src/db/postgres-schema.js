@@ -141,8 +141,17 @@ CREATE TABLE IF NOT EXISTS transactions (
   monto DECIMAL(12,2) NOT NULL,
   forma_pago VARCHAR(50),
   descripcion TEXT,
+  user_id UUID REFERENCES users(id),
+  revertida BOOLEAN NOT NULL DEFAULT FALSE,
+  revertida_por UUID REFERENCES users(id),
+  motivo_reversion TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS revertida BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS revertida_por UUID REFERENCES users(id);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS motivo_reversion TEXT;
 
 CREATE TABLE IF NOT EXISTS backups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

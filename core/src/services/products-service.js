@@ -379,6 +379,11 @@ async function updateStockPostgres(client, tenantId, productoId, tipo, cantidad,
     `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
     [delta, productoId, tenantId]
   );
+  await client.query(
+    `INSERT INTO transactions (tenant_id, tipo, referencia_id, referencia_tipo, monto, descripcion, user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [tenantId, tipo, productoId, "producto", cantidad, nota || null, usuarioId]
+  );
   return mapProductRow(product[0]);
 }
 

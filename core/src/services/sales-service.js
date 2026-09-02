@@ -51,6 +51,11 @@ async function createSalePostgres(client, tenantId, { productoId, cantidad, usua
     `UPDATE productos SET stock = stock - $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
     [cantidad, productoId, tenantId]
   );
+  await client.query(
+    `INSERT INTO transactions (tenant_id, tipo, referencia_id, referencia_tipo, monto, forma_pago, descripcion, user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [tenantId, "venta", productoId, "producto", cantidad, "efectivo", `Venta ${folio}`, usuarioId]
+  );
   return {
     ...venta[0],
     producto_nombre: p.nombre,
@@ -98,6 +103,14 @@ async function deleteSalePostgres(client, tenantId, ventaId, usuarioId) {
   await client.query(
     `UPDATE ventas SET estatus = 'anulada' WHERE id = $1 AND tenant_id = $2`,
     [ventaId, tenantId]
+  );
+  await client.query(
+    `UPDATE transactions SET revertida = TRUE, revertida_por = $1, motivo_reversion = 'Venta anulada'
+     WHERE tenant_id = $2
+       AND tipo = 'venta'
+       AND referencia_id IN (SELECT producto_id FROM ventas_detalle WHERE venta_id = $3)
+       AND revertida = FALSE`,
+    [usuarioId, tenantId, ventaId]
   );
   return { deleted: true };
 }
