@@ -22,7 +22,7 @@ const movementSchema = z.object({
 });
 
 export async function productRoutes(app) {
-  app.get("/", { preHandler: [app.requirePermission("productos", "ver")] }, async (request) => {
+  app.get("/", { config: { cacheOnRequest: { key: (r) => `productos:list:${r.query.search || ""}` } }, preHandler: [app.requirePermission("productos", "ver")] }, async (request) => {
     const searchKey = request.query.search || "";
     const key = `productos:list:${searchKey}`;
     const cached = cacheGet(request.tenantId, key);

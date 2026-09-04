@@ -8,7 +8,7 @@ const saleSchema = z.object({
 });
 
 export async function salesRoutes(app) {
-  app.get("/", { preHandler: [app.requirePermission("ventas", "ver")] }, async (request) => {
+  app.get("/", { config: { cacheOnRequest: { key: () => "ventas:list" } }, preHandler: [app.requirePermission("ventas", "ver")] }, async (request) => {
     const cached = cacheGet(request.tenantId, "ventas:list");
     if (cached) return cached;
     return cacheSet(request.tenantId, "ventas:list", { sales: await listSales({ client: request.client, tenantId: request.tenantId }) });

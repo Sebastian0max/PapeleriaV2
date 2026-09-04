@@ -84,6 +84,8 @@ export function buildApp() {
     app.register(async function pgScope(instance) {
       const { tenantResolver } = await import("./middleware/tenant-resolver.js");
       const { withDb } = await import("./middleware/with-db.js");
+      const { cacheBeforeDb } = await import("./middleware/cache-before-db.js");
+      instance.addHook("onRequest", cacheBeforeDb);
       instance.addHook("onRequest", tenantResolver);
       instance.addHook("onRequest", withDb);
       registerRoutes(instance);

@@ -21,7 +21,7 @@ export async function authRoutes(app) {
     }
     resetRateLimit(`login:${ip}`);
     const sessionUser = await getSessionUser(user, { client: request.client, tenantId: request.tenantId });
-    const token = app.jwt.sign({ id: user.id, usuario: user.usuario, rol: sessionUser.rol });
+    const token = app.jwt.sign({ id: user.id, usuario: user.usuario, rol: sessionUser.rol, tenant_id: request.tenantId });
     return { token, user: sessionUser };
   });
 
