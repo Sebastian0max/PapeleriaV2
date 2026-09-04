@@ -1,4 +1,5 @@
 import { applyImportPreview, buildImportPreview, listImportLogs, parseImportFile, templateCsv } from "../services/import-service.js";
+import { invalidateCache } from "../services/cache.js";
 
 export async function importRoutes(app) {
   app.get("/plantilla", { preHandler: [app.requireAdminPermission("importacion", "ver")] }, async (request, reply) => {
@@ -15,6 +16,7 @@ export async function importRoutes(app) {
   });
 
   app.post("/confirmar", { preHandler: [app.requireAdminPermission("importacion", "crear")] }, async (request) => {
+    invalidateCache(request.tenantId);
     return { result: await applyImportPreview(request.body.token, request.user.id, { client: request.client, tenantId: request.tenantId }) };
   });
 

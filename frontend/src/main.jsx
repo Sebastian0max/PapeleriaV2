@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Boxes,
@@ -260,7 +260,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       const result = await api(token, `/ventas/${saleToDelete.id}`, { method: "DELETE" });
       setMessage(result.message || "Venta eliminada");
       setTimeout(() => setMessage(""), 5000);
-      load();
+      refresh();
     } catch (err) {
       setError(err.message);
     }
@@ -277,7 +277,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       setTimeout(() => setMessage(""), 5000);
       setRevertTarget(null);
       setReloadKey(k => k + 1);
-      load();
+      refresh();
       return true;
     } catch (err) {
       setError(err.message);
@@ -293,7 +293,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       console.log(`[Frontend] Respuesta de eliminación producto:`, result);
       setMessage(result.message || "Producto eliminado");
       setTimeout(() => setMessage(""), 5000);
-      await load();
+      await refresh();
     } catch (err) {
       console.error("[Frontend] Error al eliminar producto:", err);
       alert("Error al eliminar: " + err.message);
@@ -301,16 +301,30 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     setProductToDelete(null);
   }
 
-  async function load(searchOverride = search) {
+  const lastDashboardAt = useRef(0);
+
+  async function loadProducts(searchOverride = search, silent = false) {
+    try {
+      const result = await api(token, `/productos?search=${encodeURIComponent(searchOverride)}`);
+      if (result?.products) setProducts(Array.isArray(result.products) ? result.products : []);
+    } catch (err) {
+      if (!silent) setError(err.message);
+    }
+  }
+
+  // Dashboard data (ventas + reports) only refreshes when forced (mutation) or
+  // when it was last fetched more than 10s ago. Typing in the search box never
+  // triggers it, which used to fire 4 requests per keystroke.
+  async function loadDashboard(force = false) {
+    const now = Date.now();
+    if (!force && now - lastDashboardAt.current < 10_000) return;
     try {
       const results = await Promise.allSettled([
-        can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(searchOverride)}`) : Promise.resolve(null),
         can("ventas:ver") ? api(token, "/ventas") : Promise.resolve(null),
         can("reportes:ver") ? api(token, "/reportes/stock") : Promise.resolve(null),
         can("reportes:ver") ? api(token, "/reportes/ganancias?periodo=dia") : Promise.resolve(null)
       ]);
-      const [productResult, saleResult, reportResult, profitResult] = results;
-      if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(Array.isArray(productResult.value.products) ? productResult.value.products : []);
+      const [saleResult, reportResult, profitResult] = results;
       if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(Array.isArray(saleResult.value.sales) ? saleResult.value.sales : []);
       if (reportResult.status === "fulfilled" && reportResult.value) {
         const raw = reportResult.value;
@@ -330,16 +344,28 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message).filter(Boolean);
       if (errors.length) setError(errors.join("; "));
       else setError("");
+      lastDashboardAt.current = Date.now();
     } catch (err) {
       setError(err.message);
     }
   }
 
+  async function refresh(searchOverride = search) {
+    await loadProducts(searchOverride);
+    await loadDashboard(true);
+  }
+
   useEffect(() => {
-    const t = setTimeout(() => load(), 300);
+    if (view === "config") return;
+    loadProducts(search);
+    loadDashboard(false);
+  }, [view]);
+
+  useEffect(() => {
+    const t = setTimeout(() => loadProducts(search), 250);
     return () => clearTimeout(t);
   }, [search]);
-  useEffect(() => { if (view !== "config") load(); }, [reloadKey]);
+  useEffect(() => { if (view !== "config") refresh(); }, [reloadKey]);
 
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
   const showConfig = session.user.rol === "admin" && can("configuracion:ver");
@@ -406,10 +432,10 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
               <h2>Productos</h2>
               <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
             </div>
-            {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
+            {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); refresh(); }} />}
             <div className="table">
               {products.map((product) => (
-                <ProductRow key={product.id} product={product} token={token} onDone={load} onMessage={(m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }} can={canAdmin} onDeleteRequest={setProductToDelete} />
+                <ProductRow key={product.id} product={product} token={token} onDone={refresh} onMessage={(m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }} can={canAdmin} onDeleteRequest={setProductToDelete} />
               ))}
             </div>
           </div>
@@ -426,7 +452,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <div className="panel-head">
               <h2>Vender</h2>
             </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={load} />}
+            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={refresh} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
@@ -447,7 +473,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       {view === "config" && <Config token={token} can={can} onImported={async (msg) => {
         if (msg) { setMessage(msg); setTimeout(() => setMessage(""), 6000); }
         setSearch("");
-        await load("");
+        await refresh("");
         setReloadKey(k => k + 1);
         setView("inventario");
       }} />}
@@ -1176,7 +1202,7 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
                     <div className="table">
                       {grouped[year][month][dateKey].map(t => (
                         <div className="row transaction-row-content" key={t.id} data-revertida={t.revertida}>
-                          <span className="muted">{t.fecha.split(" ")[1]}</span>
+                          <span className="muted">{t.fecha ? new Date(t.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : ""}</span>
                           <span className={`badge ${t.tipo}`}>{t.tipo}</span>
                           <div>
                             <strong>{t.producto_nombre}</strong>

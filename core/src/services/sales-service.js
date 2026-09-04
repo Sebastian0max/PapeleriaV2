@@ -6,6 +6,7 @@ function mapVentaRow(row) {
   if (!row) return null;
   return {
     id: row.id,
+    folio: row.folio,
     producto_id: row.producto_id,
     cantidad: Number(row.cantidad),
     precio_unitario: Number(row.precio_unitario),
@@ -19,68 +20,75 @@ function mapVentaRow(row) {
 }
 
 async function createSalePostgres(client, tenantId, { productoId, cantidad, usuarioId }) {
-  const { rows: product } = await client.query(
-    'SELECT * FROM productos WHERE id = $1 AND tenant_id = $2 AND activo = TRUE',
-    [productoId, tenantId]
-  );
-  if (!product[0]) {
-    const error = new Error("No se pudo completar la venta: el producto no existe.");
-    error.statusCode = 404;
+  try {
+    await client.query("BEGIN");
+    const { rows: product } = await client.query(
+      'SELECT * FROM productos WHERE id = $1 AND tenant_id = $2 AND activo = TRUE FOR UPDATE',
+      [productoId, tenantId]
+    );
+    if (!product[0]) {
+      const error = new Error("No se pudo completar la venta: el producto no existe.");
+      error.statusCode = 404;
+      throw error;
+    }
+    const p = product[0];
+    if (Number(p.stock) < cantidad) {
+      const error = new Error(`No se pudo completar la venta: solo hay ${p.stock} unidades disponibles.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    const total = Number(p.precio_venta) * cantidad;
+    const folio = `VTA-${Date.now()}`;
+    const { rows: venta } = await client.query(
+      `INSERT INTO ventas (tenant_id, folio, user_id, total, forma_pago, estatus)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [tenantId, folio, usuarioId, total, "efectivo", "completada"]
+    );
+    await client.query(
+      `INSERT INTO ventas_detalle (tenant_id, venta_id, producto_id, cantidad, precio_unitario, subtotal)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [tenantId, venta[0].id, productoId, cantidad, p.precio_venta, total]
+    );
+    await client.query(
+      `UPDATE productos SET stock = stock - $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+      [cantidad, productoId, tenantId]
+    );
+    await client.query(
+      `INSERT INTO transactions (tenant_id, tipo, referencia_id, referencia_tipo, monto, forma_pago, descripcion, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [tenantId, "venta", productoId, "producto", cantidad, "efectivo", `Venta ${folio}`, usuarioId]
+    );
+    await client.query("COMMIT");
+    return {
+      ...venta[0],
+      producto_nombre: p.nombre,
+      usuario: null,
+      producto_id: productoId,
+      cantidad,
+      precio_unitario: p.precio_venta,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
     throw error;
   }
-  const p = product[0];
-  if (Number(p.stock) < cantidad) {
-    const error = new Error(`No se pudo completar la venta: solo hay ${p.stock} unidades disponibles.`);
-    error.statusCode = 409;
-    throw error;
-  }
-  const total = Number(p.precio_venta) * cantidad;
-  const folio = `VTA-${Date.now()}`;
-  const { rows: venta } = await client.query(
-    `INSERT INTO ventas (tenant_id, folio, user_id, total, forma_pago, estatus)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING *`,
-    [tenantId, folio, usuarioId, total, "efectivo", "completada"]
-  );
-  await client.query(
-    `INSERT INTO ventas_detalle (tenant_id, venta_id, producto_id, cantidad, precio_unitario, subtotal)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [tenantId, venta[0].id, productoId, cantidad, p.precio_venta, total]
-  );
-  await client.query(
-    `UPDATE productos SET stock = stock - $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-    [cantidad, productoId, tenantId]
-  );
-  await client.query(
-    `INSERT INTO transactions (tenant_id, tipo, referencia_id, referencia_tipo, monto, forma_pago, descripcion, user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [tenantId, "venta", productoId, "producto", cantidad, "efectivo", `Venta ${folio}`, usuarioId]
-  );
-  return {
-    ...venta[0],
-    producto_nombre: p.nombre,
-    usuario: null,
-    producto_id: productoId,
-    cantidad,
-    precio_unitario: p.precio_venta,
-  };
 }
 
 async function listSalesPostgres(client, tenantId) {
   const { rows } = await client.query(
-    `SELECT v.id, v.folio, v.user_id, v.total, v.created_at AS fecha, v.estatus,
-            vd.producto_id, vd.cantidad, vd.precio_unitario,
-            p.nombre AS producto_nombre, u.nombre AS usuario
+    `SELECT v.id, v.folio, v.user_id, v.total, v.forma_pago, v.estatus, v.created_at,
+            u.nombre AS usuario,
+            (SELECT p.nombre FROM ventas_detalle vd JOIN productos p ON p.id = vd.producto_id
+              WHERE vd.venta_id = v.id AND vd.tenant_id = v.tenant_id ORDER BY vd.cantidad DESC LIMIT 1) AS producto_nombre,
+            (SELECT vd.producto_id FROM ventas_detalle vd
+              WHERE vd.venta_id = v.id AND vd.tenant_id = v.tenant_id ORDER BY vd.cantidad DESC LIMIT 1) AS producto_id,
+            (SELECT SUM(vd.cantidad) FROM ventas_detalle vd
+              WHERE vd.venta_id = v.id AND vd.tenant_id = v.tenant_id) AS cantidad,
+            (SELECT MAX(vd.precio_unitario) FROM ventas_detalle vd
+              WHERE vd.venta_id = v.id AND vd.tenant_id = v.tenant_id) AS precio_unitario
      FROM ventas v
-     JOIN ventas_detalle vd ON vd.venta_id = v.id
-     JOIN productos p ON p.id = vd.producto_id
      LEFT JOIN users u ON u.id = v.user_id
      WHERE v.tenant_id = $1 AND v.estatus = 'completada'
-       AND NOT EXISTS (
-         SELECT 1 FROM transactions tx
-         WHERE tx.tenant_id = $1 AND tx.tipo = 'venta'
-           AND tx.descripcion = 'Venta ' || v.folio AND tx.revertida = TRUE
-       )
      ORDER BY v.created_at DESC
      LIMIT 100`,
     [tenantId]
@@ -89,43 +97,50 @@ async function listSalesPostgres(client, tenantId) {
 }
 
 async function deleteSalePostgres(client, tenantId, ventaId, usuarioId) {
-  const { rows: venta } = await client.query(
-    'SELECT * FROM ventas WHERE id = $1 AND tenant_id = $2',
-    [ventaId, tenantId]
-  );
-  if (!venta[0]) {
-    const error = new Error("Venta no encontrada");
-    error.statusCode = 404;
-    throw error;
-  }
-  if (venta[0].estatus === "anulada") {
-    const error = new Error("La venta ya esta anulada");
-    error.statusCode = 400;
-    throw error;
-  }
-  const { rows: detalle } = await client.query(
-    'SELECT * FROM ventas_detalle WHERE venta_id = $1 AND tenant_id = $2',
-    [ventaId, tenantId]
-  );
-  for (const item of detalle) {
-    await client.query(
-      `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-      [item.cantidad, item.producto_id, tenantId]
+  try {
+    await client.query("BEGIN");
+    const { rows: venta } = await client.query(
+      'SELECT * FROM ventas WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [ventaId, tenantId]
     );
+    if (!venta[0]) {
+      const error = new Error("Venta no encontrada");
+      error.statusCode = 404;
+      throw error;
+    }
+    if (venta[0].estatus === "anulada") {
+      const error = new Error("La venta ya esta anulada");
+      error.statusCode = 400;
+      throw error;
+    }
+    const { rows: detalle } = await client.query(
+      'SELECT * FROM ventas_detalle WHERE venta_id = $1 AND tenant_id = $2',
+      [ventaId, tenantId]
+    );
+    for (const item of detalle) {
+      await client.query(
+        `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+        [item.cantidad, item.producto_id, tenantId]
+      );
+    }
+    await client.query(
+      `UPDATE ventas SET estatus = 'anulada' WHERE id = $1 AND tenant_id = $2`,
+      [ventaId, tenantId]
+    );
+    await client.query(
+      `UPDATE transactions SET revertida = TRUE, revertida_por = $1, motivo_reversion = 'Venta anulada'
+       WHERE tenant_id = $2
+         AND tipo = 'venta'
+         AND referencia_id IN (SELECT producto_id FROM ventas_detalle WHERE venta_id = $3)
+         AND revertida = FALSE`,
+      [usuarioId, tenantId, ventaId]
+    );
+    await client.query("COMMIT");
+    return { deleted: true };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
   }
-  await client.query(
-    `UPDATE ventas SET estatus = 'anulada' WHERE id = $1 AND tenant_id = $2`,
-    [ventaId, tenantId]
-  );
-  await client.query(
-    `UPDATE transactions SET revertida = TRUE, revertida_por = $1, motivo_reversion = 'Venta anulada'
-     WHERE tenant_id = $2
-       AND tipo = 'venta'
-       AND referencia_id IN (SELECT producto_id FROM ventas_detalle WHERE venta_id = $3)
-       AND revertida = FALSE`,
-    [usuarioId, tenantId, ventaId]
-  );
-  return { deleted: true };
 }
 
 // ── Exported functions (dual-mode) ────────────────────────────────

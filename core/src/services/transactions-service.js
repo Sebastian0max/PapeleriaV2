@@ -58,42 +58,49 @@ async function listTransactionsPostgres(client, tenantId, query = {}) {
 }
 
 async function revertTransactionPostgres(client, tenantId, { movimientoId, usuarioId, motivo }) {
-  const { rows: txRow } = await client.query(
-    'SELECT * FROM transactions WHERE id = $1 AND tenant_id = $2',
-    [movimientoId, tenantId]
-  );
-  const tx = txRow[0];
-  if (!tx) {
-    const error = new Error("Transacción no encontrada");
-    error.statusCode = 404;
-    throw error;
-  }
-  if (tx.revertida) {
-    const error = new Error("La transacción ya está cancelada");
-    error.statusCode = 400;
-    throw error;
-  }
-  if (tx.referencia_id && tx.referencia_tipo === 'producto') {
-    const delta = tx.tipo === 'venta' || tx.tipo === 'salida' ? tx.monto : -tx.monto;
-    await client.query(
-      `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
-      [delta, tx.referencia_id, tenantId]
+  try {
+    await client.query("BEGIN");
+    const { rows: txRow } = await client.query(
+      'SELECT * FROM transactions WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+      [movimientoId, tenantId]
     );
-  }
-  if (tx.tipo === 'venta' && tx.descripcion) {
-    const folio = String(tx.descripcion).replace(/^Venta\s+/, "");
-    if (folio && folio !== String(tx.descripcion)) {
+    const tx = txRow[0];
+    if (!tx) {
+      const error = new Error("Transacción no encontrada");
+      error.statusCode = 404;
+      throw error;
+    }
+    if (tx.revertida) {
+      const error = new Error("La transacción ya está cancelada");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (tx.referencia_id && tx.referencia_tipo === 'producto') {
+      const delta = tx.tipo === 'venta' || tx.tipo === 'salida' ? tx.monto : -tx.monto;
       await client.query(
-        `UPDATE ventas SET estatus = 'anulada' WHERE tenant_id = $1 AND folio = $2 AND estatus = 'completada'`,
-        [tenantId, folio]
+        `UPDATE productos SET stock = stock + $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+        [delta, tx.referencia_id, tenantId]
       );
     }
+    if (tx.tipo === 'venta' && tx.descripcion) {
+      const folio = String(tx.descripcion).replace(/^Venta\s+/, "");
+      if (folio && folio !== String(tx.descripcion)) {
+        await client.query(
+          `UPDATE ventas SET estatus = 'anulada' WHERE tenant_id = $1 AND folio = $2 AND estatus = 'completada'`,
+          [tenantId, folio]
+        );
+      }
+    }
+    await client.query(
+      `UPDATE transactions SET revertida = true, revertida_por = $1, motivo_reversion = $2 WHERE id = $3 AND tenant_id = $4`,
+      [usuarioId, motivo || null, movimientoId, tenantId]
+    );
+    await client.query("COMMIT");
+    return { reverted: true };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
   }
-  await client.query(
-    `UPDATE transactions SET revertida = true, revertida_por = $1, motivo_reversion = $2 WHERE id = $3 AND tenant_id = $4`,
-    [usuarioId, motivo || null, movimientoId, tenantId]
-  );
-  return { reverted: true };
 }
 
 // ── Exported functions (dual-mode) ────────────────────────────────
