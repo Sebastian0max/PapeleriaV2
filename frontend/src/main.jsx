@@ -731,7 +731,7 @@ function SaleForm({ token, products, onDone }) {
           placeholder="Buscar producto para vender..."
           value={query}
           autoComplete="off"
-          onChange={(e) => { setQuery(e.target.value); if (!productoId) setProductoId(""); }}
+          onChange={(e) => { setQuery(e.target.value); if (!productoId) setProductoId(""); setFocused(true); }}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 150)}
         />
