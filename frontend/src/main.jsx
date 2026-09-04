@@ -357,7 +357,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
 
   useEffect(() => {
     if (view === "config") return;
-    loadProducts(search);
+    loadProducts(view === "ventas" ? "" : search);
     loadDashboard(false);
   }, [view]);
 
@@ -452,7 +452,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <div className="panel-head">
               <h2>Vender</h2>
             </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={refresh} />}
+            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => refresh("")} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
@@ -738,7 +738,7 @@ function SaleForm({ token, products, onDone }) {
         {focused && query.trim() === "" && results.length > 0 && (
           <ul className="picker-dropdown">
             {results.slice(0, 20).map(p => (
-              <li key={p.id} onMouseDown={() => pick(p)}>
+              <li key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)}>
                 <span>{p.nombre}</span>
                 <span className="picker-stock">{Number(p.cantidad_stock || 0)} uds · ${(p.precio ?? 0).toLocaleString()}</span>
               </li>
@@ -749,7 +749,7 @@ function SaleForm({ token, products, onDone }) {
           <ul className="picker-dropdown">
             {results.length === 0 && <li className="picker-empty">Sin resultados para "{query}"</li>}
             {results.slice(0, 20).map(p => (
-              <li key={p.id} onMouseDown={() => pick(p)}>
+              <li key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)}>
                 <span>{p.nombre}</span>
                 <span className="picker-stock">{Number(p.cantidad_stock || 0)} uds · ${(p.precio ?? 0).toLocaleString()}</span>
               </li>
