@@ -9,6 +9,15 @@ import { getDb } from "../db/connection.js";
 
 const SALE_FILTER = `v.estatus = 'completada'`;
 
+// Day/week/month boundaries are evaluated in the store's local timezone
+// (Colombia by default). created_at is TIMESTAMPTZ (stored UTC), so the
+// wall-clock comparison shifts it to the configured zone before grouping.
+const TZ = process.env.TIMEZONE || "America/Bogota";
+const LOCAL = `AT TIME ZONE '${TZ}'`;
+const DAY_START = `DATE_TRUNC('day', NOW() ${LOCAL})`;
+const WEEK_START = `DATE_TRUNC('week', NOW() ${LOCAL})`;
+const MONTH_START = `DATE_TRUNC('month', NOW() ${LOCAL})`;
+
 async function getStockReportPostgres(client, tenantId) {
   const [
     totals,
@@ -32,14 +41,14 @@ async function getStockReportPostgres(client, tenantId) {
     client.query(
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
-       WHERE vd.tenant_id = $1 AND DATE(v.created_at) = CURRENT_DATE AND ${SALE_FILTER}
+       WHERE vd.tenant_id = $1 AND v.created_at ${LOCAL} >= ${DAY_START} AND ${SALE_FILTER}
        GROUP BY p.id, p.nombre ORDER BY cantidad DESC LIMIT 5`,
       [tenantId]
     ),
     client.query(
-      `SELECT COALESCE(SUM(vd.subtotal) FILTER (WHERE DATE(v.created_at) = CURRENT_DATE), 0)::NUMERIC(14,2) AS dia,
-              COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at >= DATE_TRUNC('week', NOW())), 0)::NUMERIC(14,2) AS semana,
-              COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at >= DATE_TRUNC('month', NOW())), 0)::NUMERIC(14,2) AS mes
+      `SELECT COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at ${LOCAL} >= ${DAY_START}), 0)::NUMERIC(14,2) AS dia,
+              COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at ${LOCAL} >= ${WEEK_START}), 0)::NUMERIC(14,2) AS semana,
+              COALESCE(SUM(vd.subtotal) FILTER (WHERE v.created_at ${LOCAL} >= ${MONTH_START}), 0)::NUMERIC(14,2) AS mes
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id
        WHERE vd.tenant_id = $1 AND ${SALE_FILTER}`,
       [tenantId]
@@ -47,21 +56,21 @@ async function getStockReportPostgres(client, tenantId) {
     client.query(
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
-       WHERE vd.tenant_id = $1 AND DATE(v.created_at) = CURRENT_DATE AND ${SALE_FILTER}
+       WHERE vd.tenant_id = $1 AND v.created_at ${LOCAL} >= ${DAY_START} AND ${SALE_FILTER}
        GROUP BY p.id, p.nombre ORDER BY p.nombre`,
       [tenantId]
     ),
     client.query(
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('week', NOW()) AND ${SALE_FILTER}
+       WHERE vd.tenant_id = $1 AND v.created_at ${LOCAL} >= ${WEEK_START} AND ${SALE_FILTER}
        GROUP BY p.id, p.nombre ORDER BY cantidad DESC LIMIT 5`,
       [tenantId]
     ),
     client.query(
       `SELECT p.id, p.nombre, SUM(vd.cantidad)::INTEGER AS cantidad, COALESCE(SUM(vd.subtotal), 0)::NUMERIC(14,2) AS ingresos
        FROM ventas_detalle vd JOIN ventas v ON v.id = vd.venta_id JOIN productos p ON p.id = vd.producto_id
-       WHERE vd.tenant_id = $1 AND v.created_at >= DATE_TRUNC('month', NOW()) AND ${SALE_FILTER}
+       WHERE vd.tenant_id = $1 AND v.created_at ${LOCAL} >= ${MONTH_START} AND ${SALE_FILTER}
        GROUP BY p.id, p.nombre ORDER BY cantidad DESC LIMIT 5`,
       [tenantId]
     ),
@@ -70,7 +79,7 @@ async function getStockReportPostgres(client, tenantId) {
               COALESCE(SUM(CASE WHEN ${SALE_FILTER} THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
        FROM productos p
        LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id AND vd.tenant_id = p.tenant_id
-       LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at >= DATE_TRUNC('week', NOW())
+       LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at ${LOCAL} >= ${WEEK_START}
        WHERE p.tenant_id = $1 AND p.activo = TRUE AND p.stock > 0
        GROUP BY p.id, p.nombre ORDER BY vendidos ASC, p.nombre ASC LIMIT 5`,
       [tenantId]
@@ -80,7 +89,7 @@ async function getStockReportPostgres(client, tenantId) {
               COALESCE(SUM(CASE WHEN ${SALE_FILTER} THEN vd.cantidad ELSE 0 END), 0)::INTEGER AS vendidos
        FROM productos p
        LEFT JOIN ventas_detalle vd ON vd.producto_id = p.id AND vd.tenant_id = p.tenant_id
-       LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at >= DATE_TRUNC('month', NOW())
+       LEFT JOIN ventas v ON v.id = vd.venta_id AND v.tenant_id = p.tenant_id AND v.created_at ${LOCAL} >= ${MONTH_START}
        WHERE p.tenant_id = $1 AND p.activo = TRUE AND p.stock > 0
        GROUP BY p.id, p.nombre ORDER BY vendidos ASC, p.nombre ASC LIMIT 5`,
       [tenantId]
