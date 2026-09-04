@@ -37,6 +37,11 @@ async function createSalePostgres(client, tenantId, { productoId, cantidad, usua
       error.statusCode = 409;
       throw error;
     }
+    if (Number(p.precio_venta) <= 0) {
+      const error = new Error("No se pudo completar la venta: el producto no tiene un precio válido configurado.");
+      error.statusCode = 409;
+      throw error;
+    }
     const total = Number(p.precio_venta) * cantidad;
     const folio = `VTA-${Date.now()}`;
     const { rows: venta } = await client.query(
@@ -131,7 +136,7 @@ async function deleteSalePostgres(client, tenantId, ventaId, usuarioId) {
       `UPDATE transactions SET revertida = TRUE, revertida_por = $1, motivo_reversion = 'Venta anulada'
        WHERE tenant_id = $2
          AND tipo = 'venta'
-         AND referencia_id IN (SELECT producto_id FROM ventas_detalle WHERE venta_id = $3)
+         AND descripcion = 'Venta ' || (SELECT folio FROM ventas WHERE id = $3 AND tenant_id = $2)
          AND revertida = FALSE`,
       [usuarioId, tenantId, ventaId]
     );
