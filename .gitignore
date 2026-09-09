@@ -64,3 +64,5 @@ wsl/
 *.xml
 *.pdf
 ntuser.*
+.vercel
+.env*

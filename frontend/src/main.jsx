@@ -243,6 +243,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const [revertTarget, setRevertTarget] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   function toggleExportMenu() { setShowExportMenu(s => !s); }
 
   useEffect(() => {
@@ -301,6 +302,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   }
 
   async function load(searchOverride = search) {
+    setIsLoading(true);
     try {
       const results = await Promise.allSettled([
         can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(searchOverride)}`) : Promise.resolve(null),
@@ -321,7 +323,11 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     }
   }
 
-  useEffect(() => { load(); }, [search]);
+  useEffect(() => {
+    if (!search) { load(""); return; }
+    const t = setTimeout(() => { setIsLoading(true); load(search); }, 400);
+    return () => clearTimeout(t);
+  }, [search]);
   useEffect(() => { if (view !== "config") load(); }, [reloadKey]);
 
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
@@ -378,7 +384,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div className="search"><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+              <div className="search"><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} />{isLoading && <span className="spinner" />}</div>
             </div>
             {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
@@ -605,7 +611,7 @@ function SaleForm({ token, products, onDone }) {
 
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId: Number(productoId), cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
       setCantidad("1");
@@ -623,7 +629,7 @@ function SaleForm({ token, products, onDone }) {
     <form className="sale-form" onSubmit={submit}>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-      <select name="producto_id" value={productoId} onChange={(e) => setProductoId(Number(e.target.value))}>
+      <select name="producto_id" value={productoId} onChange={(e) => setProductoId(e.target.value)}>
         <option value={0}>Producto</option>
         {products.map((product) => (
           <option key={product.id} value={product.id}>
