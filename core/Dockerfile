@@ -2,6 +2,9 @@ FROM node:22-alpine
 WORKDIR /app
 RUN apk add --no-cache postgresql-client
 COPY package.json ./
+COPY core/package.json ./core/
+COPY shared/package.json ./shared/
+COPY frontend/package.json ./frontend/
 RUN npm install --omit=dev
 COPY . .
 ENV PORT=4000
