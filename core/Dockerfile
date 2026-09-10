@@ -8,4 +8,4 @@ ENV PORT=4000
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
 EXPOSE 4000
-CMD ["node", "src/index.js"]
+CMD ["node", "core/src/index.js"]
