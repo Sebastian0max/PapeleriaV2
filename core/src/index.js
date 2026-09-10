@@ -13,9 +13,6 @@ if (isPostgres) {
   console.log("[startup] Postgres schema & seed complete.");
 } else {
   console.log("[startup] SQLite mode.");
-  const { downloadDb, startPeriodicBackup, flushOnShutdown } = await import("./services/cloud-backup.js");
-  await downloadDb();
-  getDb();
   try {
     const purged = purgeOldTrash(7);
     console.log(`[startup] Papelera: ${purged.purged} productos purgados.`);
@@ -28,6 +25,7 @@ if (isPostgres) {
   } catch (err) {
     console.error(`[startup] Error purgando canceladas: ${err.message}`);
   }
+  const { startPeriodicBackup, flushOnShutdown } = await import("./services/cloud-backup.js");
   startPeriodicBackup();
   setInterval(async () => {
     const h = new Date().getHours();
@@ -54,3 +52,10 @@ if (isPostgres) {
 
 const app = buildApp();
 await app.listen({ host: config.host, port: config.port });
+console.log(`[server] Listening on ${config.host}:${config.port}`);
+
+// Descargar DB de Supabase en segundo plano (no bloquea el arranque)
+if (!isPostgres) {
+  const { downloadDb } = await import("./services/cloud-backup.js");
+  downloadDb().catch((err) => console.error("[startup] DB download error:", err.message));
+}
