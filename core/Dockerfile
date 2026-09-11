@@ -5,8 +5,9 @@ COPY package.json ./
 COPY core/package.json ./core/
 COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
-RUN npm install --omit=dev
+RUN npm install --omit=dev --workspaces
 COPY . .
+RUN mkdir -p data uploads/productos
 ENV PORT=4000
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
