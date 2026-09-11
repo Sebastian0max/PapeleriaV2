@@ -124,9 +124,13 @@ function Login({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  const [loading, setLoading] = useState(false);
+
   async function submit(event) {
     event.preventDefault();
+    if (loading) return;
     setError("");
+    setLoading(true);
     try {
       const data = await api(null, "/auth/login", {
         method: "POST",
@@ -135,6 +139,8 @@ function Login({ onLogin }) {
       onLogin(data);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -146,7 +152,7 @@ function Login({ onLogin }) {
         <label>Usuario<input name="usuario" placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
         <label>Password<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <p className="error">{error}</p>}
-        <button>Entrar</button>
+        <button disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
       </form>
     </main>
   );

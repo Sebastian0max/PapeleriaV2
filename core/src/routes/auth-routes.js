@@ -16,10 +16,15 @@ export async function authRoutes(app) {
       return reply.code(429).send({ message: `Demasiados intentos. Espera ${rl.retryAfter}s.` });
     }
     const user = await findUserByUsername(input.usuario, { client: request.client, tenantId: request.tenantId });
-    if (!user || !verifyPassword(input.password, user.password_hash)) {
+    if (!user) {
+      resetRateLimit(`login:${ip}`);
       return reply.code(401).send({ message: "Usuario o password incorrectos" });
     }
+    const passwordOk = await bcrypt.compare(input.password, user.password_hash);
     resetRateLimit(`login:${ip}`);
+    if (!passwordOk) {
+      return reply.code(401).send({ message: "Usuario o password incorrectos" });
+    }
     const sessionUser = await getSessionUser(user, { client: request.client, tenantId: request.tenantId });
     const token = app.jwt.sign({ id: user.id, usuario: user.usuario, rol: sessionUser.rol, tenant_id: request.tenantId });
     return { token, user: sessionUser };
