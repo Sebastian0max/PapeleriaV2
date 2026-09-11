@@ -11,7 +11,7 @@ RUN mkdir -p core shared frontend && \
     (cd shared && npm install --omit=dev) && \
     (cd frontend && npm install --omit=dev)
 COPY . .
-RUN mkdir -p data uploads/productos
+RUN mkdir -p core/data uploads/productos
 ENV PORT=4000
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
