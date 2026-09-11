@@ -5,7 +5,7 @@ COPY package.json ./
 COPY core/package.json ./core/
 COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
-RUN npm install --omit=dev --workspaces
+RUN mkdir -p core shared frontend && npm install --omit=dev --workspaces
 COPY . .
 RUN mkdir -p data uploads/productos
 ENV PORT=4000
