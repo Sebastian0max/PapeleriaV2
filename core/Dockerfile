@@ -6,7 +6,7 @@ COPY core/package.json ./core/
 COPY shared/package.json ./shared/
 COPY frontend/package.json ./frontend/
 RUN mkdir -p core shared frontend && \
-    npm install --omit=dev && \
+    npm install --workspaces --omit=dev && \
     (cd core && npm install --omit=dev) && \
     (cd shared && npm install --omit=dev) && \
     (cd frontend && npm install --omit=dev)
