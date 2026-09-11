@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Boxes,
   Download,
   FileText,
-  ImagePlus,
   LogOut,
   Moon,
   PackagePlus,
@@ -16,15 +15,12 @@ import {
   TrendingUp,
   Upload,
   Users,
-  AlertTriangle,
   RotateCcw,
-  Clock
+  Clock,
+  AlertTriangle
 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import "./styles.css";
-
-// Ganancias uses the heavy "recharts" library, so it is loaded lazily to keep
-// the initial bundle small and the app faster to load & interact.
-const GananciasLazy = React.lazy(() => import("./Ganancias.jsx"));
 
 // Global error boundary to catch unexpected render errors
 class ErrorBoundary extends React.Component {
@@ -57,7 +53,7 @@ class ErrorBoundary extends React.Component {
 }
 
 
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.API_URL || (import.meta.env.PROD ? "" : "http://127.0.0.1:4000");
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:4000";
 const ACTIONS = ["ver", "crear", "editar", "eliminar"];
 
 function normalizePath(p) { return '/' + p.replace(/^\/+/, '').replace(/\/+$/, ''); }
@@ -147,8 +143,8 @@ function Login({ onLogin }) {
       <form className="login-panel" onSubmit={submit}>
         <Boxes size={40} />
         <h1>Sistema Papeleria</h1>
-        <label>Usuario<input placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
-        <label>Password<input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+        <label>Usuario<input name="usuario" placeholder="admin" value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus /></label>
+        <label>Password<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <p className="error">{error}</p>}
         <button>Entrar</button>
       </form>
@@ -180,6 +176,8 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
 
   if (!isOpen) return null;
 
+  const esRestaurar = transaccion?.revertida;
+
   async function handleConfirm() {
     if (!password) {
       setError("Debes ingresar la contraseña del administrador.");
@@ -187,12 +185,12 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
     }
     setBusy(true);
     setError("");
-    const ok = await onConfirm(transaccion.id, password, motivo);
-    if (ok) {
+    const result = await onConfirm(transaccion.id, password, motivo, esRestaurar);
+    if (result.ok) {
       setPassword("");
       setMotivo("");
     } else {
-      setError("Contraseña incorrecta. Intenta de nuevo.");
+      setError(result.error || "No se pudo completar la operación. Verifica la contraseña e intenta de nuevo.");
     }
     setBusy(false);
   }
@@ -202,7 +200,7 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h3>Revertir {tipoLabel}</h3>
+        <h3>{esRestaurar ? "Restaurar" : "Revertir"} {tipoLabel}</h3>
         <p style={{ whiteSpace: "pre-line", margin: "16px 0" }}>
           Producto: {transaccion?.producto_nombre}{"\n"}
           Cantidad: {transaccion?.cantidad} uds{"\n"}
@@ -212,14 +210,14 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
         {error && <p className="error" style={{ margin: "8px 0" }}>{error}</p>}
         <label>
           Motivo (opcional)
-          <input placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+          <input name="motivo" placeholder="Ej: Se registró la cantidad equivocada" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
         </label>
         <label style={{ marginTop: "8px" }}>
           Contraseña de administrador
-          <input type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <input name="password_confirm" type="password" placeholder="Ingresa tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
         </label>
         <div className="modal-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "16px" }}>
-          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? "Revertindo..." : "Confirmar reversión"}</button>
+          <button className="danger" onClick={handleConfirm} disabled={busy}>{busy ? (esRestaurar ? "Restaurando..." : "Revertindo...") : (esRestaurar ? "Confirmar restauración" : "Confirmar reversión")}</button>
           <button onClick={() => { setPassword(""); setMotivo(""); setError(""); onCancel(); }}>Cancelar</button>
         </div>
       </div>
@@ -245,6 +243,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const [revertTarget, setRevertTarget] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   function toggleExportMenu() { setShowExportMenu(s => !s); }
 
   useEffect(() => {
@@ -260,28 +259,29 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       const result = await api(token, `/ventas/${saleToDelete.id}`, { method: "DELETE" });
       setMessage(result.message || "Venta eliminada");
       setTimeout(() => setMessage(""), 5000);
-      refresh();
+      load();
+      setReloadKey(k => k + 1);
     } catch (err) {
       setError(err.message);
     }
     setSaleToDelete(null);
   }
 
-  async function confirmRevert(movimientoId, password, motivo) {
+  async function confirmRevert(movimientoId, password, motivo, esRestaurar) {
     try {
-      const result = await api(token, `/transacciones/${movimientoId}/revertir`, {
+      const endpoint = esRestaurar ? `/transacciones/${movimientoId}/restaurar` : `/transacciones/${movimientoId}/revertir`;
+      const result = await api(token, endpoint, {
         method: "POST",
         body: JSON.stringify({ password, motivo: motivo || undefined })
       });
-      setMessage(result.message || "Transaccion revertida correctamente");
+      setMessage(result.message || (esRestaurar ? "Transaccion restaurada correctamente" : "Transaccion revertida correctamente"));
       setTimeout(() => setMessage(""), 5000);
       setRevertTarget(null);
       setReloadKey(k => k + 1);
-      refresh();
-      return true;
+      load();
+      return { ok: true };
     } catch (err) {
-      setError(err.message);
-      return false;
+      return { ok: false, error: err.message };
     }
   }
 
@@ -293,7 +293,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       console.log(`[Frontend] Respuesta de eliminación producto:`, result);
       setMessage(result.message || "Producto eliminado");
       setTimeout(() => setMessage(""), 5000);
-      await refresh();
+      await load();
     } catch (err) {
       console.error("[Frontend] Error al eliminar producto:", err);
       alert("Error al eliminar: " + err.message);
@@ -301,71 +301,34 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     setProductToDelete(null);
   }
 
-  const lastDashboardAt = useRef(0);
-
-  async function loadProducts(searchOverride = search, silent = false) {
-    try {
-      const result = await api(token, `/productos?search=${encodeURIComponent(searchOverride)}`);
-      if (result?.products) setProducts(Array.isArray(result.products) ? result.products : []);
-    } catch (err) {
-      if (!silent) setError(err.message);
-    }
-  }
-
-  // Dashboard data (ventas + reports) only refreshes when forced (mutation) or
-  // when it was last fetched more than 10s ago. Typing in the search box never
-  // triggers it, which used to fire 4 requests per keystroke.
-  async function loadDashboard(force = false) {
-    const now = Date.now();
-    if (!force && now - lastDashboardAt.current < 10_000) return;
+  async function load(searchOverride = search) {
+    setIsLoading(true);
     try {
       const results = await Promise.allSettled([
+        can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(searchOverride)}`) : Promise.resolve(null),
         can("ventas:ver") ? api(token, "/ventas") : Promise.resolve(null),
         can("reportes:ver") ? api(token, "/reportes/stock") : Promise.resolve(null),
         can("reportes:ver") ? api(token, "/reportes/ganancias?periodo=dia") : Promise.resolve(null)
       ]);
-      const [saleResult, reportResult, profitResult] = results;
-      if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(Array.isArray(saleResult.value.sales) ? saleResult.value.sales : []);
-      if (reportResult.status === "fulfilled" && reportResult.value) {
-        const raw = reportResult.value;
-        setReport({
-          ...raw,
-          ventasDia: raw.ventasDia && typeof raw.ventasDia === "object" ? { top: Array.isArray(raw.ventasDia.top) ? raw.ventasDia.top : [], ingresos: raw.ventasDia.ingresos ?? 0 } : { top: [], ingresos: 0 },
-          ventasDiaDetalle: Array.isArray(raw.ventasDiaDetalle) ? raw.ventasDiaDetalle : [],
-          ventasSemana: raw.ventasSemana && typeof raw.ventasSemana === "object" ? { top: Array.isArray(raw.ventasSemana.top) ? raw.ventasSemana.top : [], ingresos: raw.ventasSemana.ingresos ?? 0 } : { top: [], ingresos: 0 },
-          ventasMes: raw.ventasMes && typeof raw.ventasMes === "object" ? { top: Array.isArray(raw.ventasMes.top) ? raw.ventasMes.top : [], ingresos: raw.ventasMes.ingresos ?? 0 } : { top: [], ingresos: 0 },
-          menosVendidosSemana: Array.isArray(raw.menosVendidosSemana) ? raw.menosVendidosSemana : [],
-          menosVendidosMes: Array.isArray(raw.menosVendidosMes) ? raw.menosVendidosMes : [],
-          agotados: Array.isArray(raw.agotados) ? raw.agotados : [],
-          bajoStock: Array.isArray(raw.bajoStock) ? raw.bajoStock : [],
-        });
-      }
+      const [productResult, saleResult, reportResult, profitResult] = results;
+      if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(productResult.value.products);
+      if (saleResult.status === "fulfilled" && saleResult.value?.sales) setSales(saleResult.value.sales);
+      if (reportResult.status === "fulfilled" && reportResult.value) setReport(reportResult.value);
       if (profitResult.status === "fulfilled" && profitResult.value) setProfitToday(profitResult.value);
       const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message).filter(Boolean);
       if (errors.length) setError(errors.join("; "));
       else setError("");
-      lastDashboardAt.current = Date.now();
     } catch (err) {
       setError(err.message);
     }
   }
 
-  async function refresh(searchOverride = search) {
-    await loadProducts(searchOverride);
-    await loadDashboard(true);
-  }
-
   useEffect(() => {
-    if (view === "config") return;
-    loadProducts(view === "ventas" ? "" : search);
-    loadDashboard(false);
-  }, [view]);
-
-  useEffect(() => {
-    const t = setTimeout(() => loadProducts(search), 250);
+    if (!search) { load(""); return; }
+    const t = setTimeout(() => { setIsLoading(true); load(search); }, 400);
     return () => clearTimeout(t);
   }, [search]);
-  useEffect(() => { if (view !== "config") refresh(); }, [reloadKey]);
+  useEffect(() => { if (view !== "config") load(); }, [reloadKey]);
 
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
   const showConfig = session.user.rol === "admin" && can("configuracion:ver");
@@ -410,19 +373,10 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <Metric icon={<Boxes />} label="Productos" value={products.length} />
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
-          {report && report.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} />}
-          {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${(profitToday.totalGanancia ?? 0).toLocaleString()}`} />}
+          {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
+          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-warning" />}
+          {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} className="metric-warning" />}
         </section>
-      )}
-
-      {view !== "config" && report && report.bajoStock?.length > 0 && (
-        <div className="dashboard-stock-alert">
-          <span>⚠️</span>
-          <span>
-            <strong>{report.bajoStock.length} con stock bajo</strong>
-            {" - Revisa el panel de Stock para más detalles."}
-          </span>
-        </div>
       )}
 
       {view === "inventario" && (
@@ -430,12 +384,12 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <div className="panel inventory-panel">
             <div className="panel-head">
               <h2>Productos</h2>
-              <div className="search"><Search size={18} /><input placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+              <div className="search"><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} />{isLoading && <span className="spinner" />}</div>
             </div>
-            {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); refresh(); }} />}
+            {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
               {products.map((product) => (
-                <ProductRow key={product.id} product={product} token={token} onDone={refresh} onMessage={(m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }} can={canAdmin} onDeleteRequest={setProductToDelete} />
+                <ProductRow key={product.id} product={product} token={token} onDone={load} onMessage={(m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }} can={canAdmin} onDeleteRequest={setProductToDelete} />
               ))}
             </div>
           </div>
@@ -452,7 +406,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <div className="panel-head">
               <h2>Vender</h2>
             </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => refresh("")} />}
+            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => { load(); setReloadKey(k => k + 1); }} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
@@ -464,16 +418,12 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
         </section>
       )}
 
-      {view === "ganancias" && (
-        <React.Suspense fallback={<p className="muted">Cargando gráficos...</p>}>
-          <GananciasLazy token={token} />
-        </React.Suspense>
-      )}
+      {view === "ganancias" && <Ganancias token={token} />}
 
       {view === "config" && <Config token={token} can={can} onImported={async (msg) => {
         if (msg) { setMessage(msg); setTimeout(() => setMessage(""), 6000); }
         setSearch("");
-        await refresh("");
+        await load("");
         setReloadKey(k => k + 1);
         setView("inventario");
       }} />}
@@ -501,15 +451,13 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   );
 }
 
-function Metric({ icon, label, value }) {
-  return <div className="metric">{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
+function Metric({ icon, label, value, className }) {
+  return <div className={"metric" + (className ? " " + className : "")}>{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
 }
 
 function ProductForm({ token, onDone }) {
   const empty = { nombre: "", cantidad_stock: "", precio: "", costo: "" };
   const [form, setForm] = useState(empty);
-  const [image, setImage] = useState(null);
-
   async function submit(event) {
     event.preventDefault();
     const payload = {
@@ -522,24 +470,17 @@ function ProductForm({ token, onDone }) {
       sku: "",
       categoria: ""
     };
-    const data = await api(token, "/productos", { method: "POST", body: JSON.stringify(payload) });
-    if (image) {
-      const fd = new FormData();
-      fd.append("file", image);
-      await api(token, `/productos/${data.product.id}/imagen`, { method: "POST", body: fd });
-    }
+    await api(token, "/productos", { method: "POST", body: JSON.stringify(payload) });
     setForm(empty);
-    setImage(null);
     onDone();
   }
 
   return (
     <form className="product-form" onSubmit={submit}>
-      <label>Nombre del producto<input required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
-      <label>Cantidad en stock<input required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
-      <label>Precio de costo<input type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
-      <label>Precio de venta<input required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
-      <label className="file-button" title="Imagen"><ImagePlus size={18} /><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] || null)} /></label>
+      <label>Nombre del producto<input name="nombre" required placeholder="Ej. Bolígrafo azul" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></label>
+      <label>Stock<input name="cantidad_stock" required type="number" min="0" placeholder="0" value={form.cantidad_stock} onChange={(e) => setForm({ ...form, cantidad_stock: e.target.value })} /></label>
+      <label>Precio de costo<input name="costo" type="number" min="0" placeholder="0" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
+      <label>Precio de venta<input name="precio" required type="number" min="0" placeholder="0" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} /></label>
       <button title="Agregar producto"><PackagePlus size={18} /></button>
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) >= Number(form.precio) && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0 }}>⚠️ El precio de venta es menor o igual al costo. ¡Estás vendiendo a pérdida!</span>}
       {Number(form.costo) > 0 && Number(form.precio) > 0 && Number(form.costo) < Number(form.precio) && (Number(form.precio) - Number(form.costo)) / Number(form.precio) < 0.1 && <span className="warning" style={{ gridColumn: "1 / -1", margin: 0, background: "var(--warning-bg)", borderColor: "var(--warning-border)" }}>⚠️ Margen menor al 10%. Considera aumentar el precio de venta.</span>}
@@ -565,7 +506,7 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     setEditForm({
       nombre: product.nombre,
       precio: product.precio,
-      costo: product.costo ?? 0,
+      costo: product.costo ?? "",
       cantidad_stock: product.cantidad_stock
     });
     setIsEditing(true);
@@ -594,10 +535,10 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
     return (
       <div className="row product-row-edit">
         <div className="edit-fields">
-          <label>Nombre<input value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
-          <label>Stock<input type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
-          <label>Costo<input type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
-          <label>Venta<input type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
+          <label>Nombre<input name="edit-nombre" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} /></label>
+          <label>Stock<input name="edit-stock" type="number" min="0" value={editForm.cantidad_stock} onChange={(e) => setEditForm({ ...editForm, cantidad_stock: e.target.value })} /></label>
+          <label>Costo<input name="edit-costo" type="number" min="0" value={editForm.costo} onChange={(e) => setEditForm({ ...editForm, costo: e.target.value })} /></label>
+          <label>Venta<input name="edit-precio" type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
         </div>
         <div className="actions">
           <button onClick={saveEdit}>Guardar</button>
@@ -626,49 +567,27 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
   );
 }
 
-function normalizeText(s) {
-  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
 function SaleForm({ token, products, onDone }) {
-  const [query, setQuery] = useState("");
-  const [productoId, setProductoId] = useState("");
-  const [cantidad, setCantidad] = useState(1);
-  const [focused, setFocused] = useState(false);
+  const [productoId, setProductoId] = useState(0);
+  const [cantidad, setCantidad] = useState("1");
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const selectedProduct = useMemo(
-    () => products.find(p => String(p.id) === String(productoId)) || null,
-    [products, productoId]
-  );
+  const total = selectedProduct && +cantidad > 0 ? selectedProduct.precio * +cantidad : 0;
 
-  const results = useMemo(() => {
-    const q = normalizeText(query.trim());
-    const list = q
-      ? products.filter(p => normalizeText(p.nombre).includes(q))
-      : products;
-    // Mostrar primero los que tienen stock y son vendibles
-    return [...list].sort((a, b) => Number(b.cantidad_stock || 0) - Number(a.cantidad_stock || 0));
-  }, [products, query]);
-
-  const total = selectedProduct && cantidad > 0 ? (Number(selectedProduct.precio) || 0) * cantidad : 0;
-
-  function pick(p) {
-    setProductoId(p.id);
-    setQuery("");
-    setFocused(false);
+  useEffect(() => {
+    const prod = products.find(p => p.id === productoId);
+    setSelectedProduct(prod || null);
     setMessage("");
     setError("");
-  }
+  }, [productoId, products]);
 
   async function submit(event) {
     event.preventDefault();
-    if (!productoId || !selectedProduct) {
-      setError("No se pudo completar la venta: selecciona primero un producto.");
-      return;
-    }
+    if (!productoId) return;
+    if (!selectedProduct) return;
 
     if (!selectedProduct.activo) {
       setError("No se pudo completar la venta: este producto ya no está disponible.");
@@ -680,25 +599,23 @@ function SaleForm({ token, products, onDone }) {
       return;
     }
 
-    const q = cantidad || 0;
-    if (!q || q <= 0) {
+    if (!cantidad || !Number.isFinite(+cantidad) || +cantidad <= 0) {
       setError("No se pudo completar la venta: la cantidad ingresada no es válida.");
       return;
     }
 
-    if (q > Number(selectedProduct.cantidad_stock || 0)) {
+    if (+cantidad > selectedProduct.cantidad_stock) {
       setError(`No se pudo completar la venta: solo hay ${selectedProduct.cantidad_stock} unidades disponibles de este producto.`);
       return;
     }
 
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: q }) });
-      setMessage(`Venta exitosa: ${q} unidades de ${selectedProduct.nombre} por $${(total ?? 0).toLocaleString()}`);
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId: Number(productoId), cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
+      setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
-      setCantidad(1);
+      setCantidad("1");
       setProductoId("");
-      setQuery("");
       onDone();
     } catch (err) {
       setError(err.message || "No se pudo completar la venta: hubo un problema de conexión, intenta nuevamente.");
@@ -708,84 +625,41 @@ function SaleForm({ token, products, onDone }) {
     }
   }
 
-  const selected = selectedProduct && (
-    <div className="selected-product">
-      <div>
-        <strong>{selectedProduct.nombre}</strong>
-        <span className="muted">{selectedProduct.cantidad_stock} en stock · ${(selectedProduct.precio ?? 0).toLocaleString()} c/u</span>
-      </div>
-      <button type="button" className="icon-button" title="Quitar seleccion" onClick={() => { setProductoId(""); }}>
-        ✕
-      </button>
-    </div>
-  );
-
   return (
     <form className="sale-form" onSubmit={submit}>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-
-      <div className="product-picker">
-        <Search size={16} className="picker-icon" />
-        <input
-          placeholder="Buscar producto para vender..."
-          value={query}
-          autoComplete="off"
-          onChange={(e) => { setQuery(e.target.value); if (!productoId) setProductoId(""); setFocused(true); }}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
-        />
-        {focused && query.trim() === "" && results.length > 0 && (
-          <ul className="picker-dropdown">
-            {results.slice(0, 20).map(p => (
-              <li key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)}>
-                <span>{p.nombre}</span>
-                <span className="picker-stock">{Number(p.cantidad_stock || 0)} uds · ${(p.precio ?? 0).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {focused && query.trim() !== "" && (
-          <ul className="picker-dropdown">
-            {results.length === 0 && <li className="picker-empty">Sin resultados para "{query}"</li>}
-            {results.slice(0, 20).map(p => (
-              <li key={p.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)}>
-                <span>{p.nombre}</span>
-                <span className="picker-stock">{Number(p.cantidad_stock || 0)} uds · ${(p.precio ?? 0).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {selected}
-
-      <div className="sale-quantity">
-        <input
-          type="number"
-          min="1"
-          value={cantidad}
-          disabled={!productoId}
-          onChange={(e) => setCantidad(Number(e.target.value))}
-        />
-        <button type="submit" title="Vender" disabled={busy || !productoId}>
-          <ShoppingCart size={18} />
-        </button>
-      </div>
-
-      {selectedProduct && cantidad > 0 && (
+      <select name="producto_id" value={productoId} onChange={(e) => setProductoId(e.target.value)}>
+        <option value={0}>Producto</option>
+        {products.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.nombre}
+          </option>
+        ))}
+      </select>
+      {selectedProduct && (
+        <div className="stock-info">
+          <span><strong>Stock:</strong> {selectedProduct.cantidad_stock} uds</span>
+          <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
+        </div>
+      )}
+      <input name="cantidad" type="number" min="1" placeholder="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+      <button title="Vender" disabled={busy}>
+        <ShoppingCart size={18} />
+      </button>
+      {selectedProduct && +cantidad > 0 && (
         <div className="stock-info total-display">
-           Total a cobrar: <span>${(total ?? 0).toLocaleString()}</span>
+          Total a cobrar: <span>${total.toLocaleString()}</span>
         </div>
       )}
-      {selectedProduct && (Number(selectedProduct.costo) || 0) > Number(selectedProduct.precio) && (
+      {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
         <div className="sale-alert">
-          ⚠️ Este producto se vende por debajo de su costo (${(selectedProduct.costo ?? 0).toLocaleString()})
+          ⚠️ Este producto se vende por debajo de su costo (${selectedProduct.costo.toLocaleString()})
         </div>
       )}
-      {selectedProduct && (Number(selectedProduct.costo) || 0) > 0 && Number(selectedProduct.costo) <= Number(selectedProduct.precio) && (Number(selectedProduct.precio) - Number(selectedProduct.costo)) / Number(selectedProduct.precio) < 0.1 && (
+      {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
         <div className="sale-alert">
-          ⚠️ Margen bajo: {(100 * (Number(selectedProduct.precio) - Number(selectedProduct.costo)) / Number(selectedProduct.precio)).toFixed(1)}% de ganancia
+          ⚠️ Margen bajo: {(100 * (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio).toFixed(1)}% de ganancia
         </div>
       )}
     </form>
@@ -794,36 +668,101 @@ function SaleForm({ token, products, onDone }) {
 
 function Report({ report }) {
   if (!report) return null;
-  const vd = report.ventasDia || { top: [], ingresos: 0 };
-  const vs = report.ventasSemana || { top: [], ingresos: 0 };
-  const vm = report.ventasMes || { top: [], ingresos: 0 };
-  const vdd = report.ventasDiaDetalle || [];
+  const RankBadge = ({ i }) => {
+    const cls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "rank-n";
+    return <span className={`rank ${cls}`}>{i + 1}</span>;
+  };
+  const StockBar = ({ current, min }) => {
+    const pct = min > 0 ? Math.round((current / min) * 100) : 0;
+    const cls = pct === 0 ? "critical" : pct < 50 ? "warning" : "ok";
+    return <div className="stock-bar"><div className={`stock-bar-fill ${cls}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>;
+  };
+  const renderTopList = (items, ingresos) => (
+    <div className="report-section">
+      {items.length === 0 ? <p className="muted">Sin ventas</p> : items.map((p, i) => (
+        <div className="report-line" key={p.id}>
+          <span><RankBadge i={i} />{p.nombre}</span>
+          <strong>{p.cantidad} uds</strong>
+        </div>
+      ))}
+      {ingresos != null && (
+        <div className="report-revenue-total">
+          <span>Total ingresos</span>
+          <strong>${ingresos}</strong>
+        </div>
+      )}
+    </div>
+  );
+  const renderStockRow = (p, showBar) => (
+    <div className="stock-alert-row" key={p.id}>
+      <span className="stock-label">{p.nombre}</span>
+      {showBar && <StockBar current={p.cantidad_stock} min={p.stock_minimo || 1} />}
+      <span className="stock-count">{p.cantidad_stock} uds</span>
+    </div>
+  );
   return (
     <div className="report">
-      <h3>Top del Dia</h3>
-      {vd.top.length === 0 ? <p className="muted">Sin ventas hoy</p> : vd.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos dia:</span><strong>${vd.ingresos}</strong></div>
+      <div className="report-summary">
+        <div className="report-summary-card">
+          <span className="label">Hoy</span>
+          <span className="value">${report.ventasDia.ingresos}</span>
+        </div>
+        <div className="report-summary-card">
+          <span className="label">Semana</span>
+          <span className="value">${report.ventasSemana.ingresos}</span>
+        </div>
+        <div className="report-summary-card">
+          <span className="label">Mes</span>
+          <span className="value">${report.ventasMes.ingresos}</span>
+        </div>
+      </div>
 
-      <h3>Productos vendidos hoy</h3>
-      {vdd.length === 0 ? <p className="muted">Sin ventas hoy</p> : vdd.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
+      <h3 style={{ margin: 0, fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Dia</h3>
+      {renderTopList(report.ventasDia.top, report.ventasDia.ingresos)}
 
-      <h3>Top de la Semana</h3>
-      {vs.top.length === 0 ? <p className="muted">Sin ventas esta semana</p> : vs.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos semana:</span><strong>${vs.ingresos}</strong></div>
+      <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top de la Semana</h3>
+      {renderTopList(report.ventasSemana.top, report.ventasSemana.ingresos)}
 
-      <h3>Top del Mes</h3>
-      {vm.top.length === 0 ? <p className="muted">Sin ventas este mes</p> : vm.top.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.cantidad} uds</strong></div>)}
-      <div className="report-line" style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}><span>Total ingresos mes:</span><strong>${vm.ingresos}</strong></div>
+      <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Mes</h3>
+      {renderTopList(report.ventasMes.top, report.ventasMes.ingresos)}
 
-      <h3>Menos vendidos (semana)</h3>
-      {(report.menosVendidosSemana || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosSemana.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
+      {report.menosVendidosSemana?.length > 0 && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (semana)</h3>
+          <div className="report-section">
+            {report.menosVendidosSemana.map((p, i) => (
+              <div className="report-line" key={p.id}>
+                <span><RankBadge i={i} />{p.nombre}</span>
+                <strong>{p.vendidos} uds</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      <h3>Menos vendidos (mes)</h3>
-      {(report.menosVendidosMes || []).length === 0 ? <p className="muted">Sin datos</p> : report.menosVendidosMes.map((p, i) => <div className="report-line" key={p.id}><span>{i + 1}. {p.nombre}</span><strong>{p.vendidos} uds vendidos</strong></div>)}
+      {report.menosVendidosMes?.length > 0 && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (mes)</h3>
+          <div className="report-section">
+            {report.menosVendidosMes.map((p, i) => (
+              <div className="report-line" key={p.id}>
+                <span><RankBadge i={i} />{p.nombre}</span>
+                <strong>{p.vendidos} uds</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      <h3>Productos con bajo stock</h3>
-      {(report.agotados || []).map((p) => <div className="report-line" key={p.id}><span className="error">{p.nombre} (Agotado)</span><strong>{p.cantidad_stock} uds</strong></div>)}
-      {(report.bajoStock || []).map((p) => <div className="report-line" key={p.id}><span className="warning" style={{ padding: "0", border: "0", background: "transparent" }}>{p.nombre}</span><strong>{p.cantidad_stock} uds</strong></div>)}
+      {(report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Alertas de Stock</h3>
+          <div className="report-section">
+            {report.agotados?.map(p => renderStockRow(p, false))}
+            {report.bajoStock?.map(p => renderStockRow(p, true))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -923,7 +862,7 @@ function ImportPanel({ token, onImported }) {
         <button className="link-button" type="button" onClick={downloadTemplate}><Download size={17} />Plantilla</button>
       </div>
       <form className="upload-line" onSubmit={importFile}>
-        <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <input name="import-file" type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
         <button disabled={busy || !file}><Upload size={17} />{busy ? "Importando" : "Importar"}</button>
       </form>
       {message && <p className="success">{message}</p>}
@@ -968,13 +907,13 @@ function UsersPanel({ token }) {
     const [userData, roleData] = await Promise.all([api(token, "/usuarios"), api(token, "/roles")]);
     setUsers(userData.users);
     setRoles(roleData.roles);
-    if (!form.rol_id && roleData.roles[0]) setForm((x) => ({ ...x, rol_id: roleData.roles[0].id }));
+    if (!form.rol_id && roleData.roles?.[0]) setForm((x) => ({ ...x, rol_id: roleData.roles[0].id }));
   }
   useEffect(() => { load(); }, []);
 
   async function create(event) {
     event.preventDefault();
-    await api(token, "/usuarios", { method: "POST", body: JSON.stringify({ ...form, rol_id: form.rol_id }) });
+    await api(token, "/usuarios", { method: "POST", body: JSON.stringify({ ...form, rol_id: Number(form.rol_id) }) });
     setForm({ usuario: "", password: "", rol_id: roles[0]?.id || "" });
     load();
   }
@@ -989,9 +928,9 @@ function UsersPanel({ token }) {
     <div className="panel">
       <h2>Usuarios</h2>
       <form className="user-form" onSubmit={create}>
-        <input placeholder="Usuario" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />
-        <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        <select value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
+        <input name="user-usuario" placeholder="Usuario" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />
+        <input name="user-password" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <select name="user-rol_id" value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>{roles.map((role) => <option key={role.id} value={role.id}>{role.nombre}</option>)}</select>
         <button>Crear</button>
       </form>
       <div className="table">{users.map((user) => <div className="row" key={user.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px auto", alignItems: "center" }}><div><strong>{user.usuario}</strong><span className="muted">{user.rol}</span></div><span>{user.activo ? "Activo" : "Inactivo"}</span><button className="danger" onClick={() => deactivate(user.id)}>Desactivar</button></div>)}</div>
@@ -1008,7 +947,7 @@ function RolesPanel({ token }) {
     const data = await api(token, "/roles");
     setRoles(data.roles);
     setPermissions(data.permissions);
-    setSelected((current) => current || data.roles[0] || null);
+    setSelected((current) => current || data.roles?.[0] || null);
   }
   useEffect(() => { load(); }, []);
 
@@ -1035,10 +974,10 @@ function RolesPanel({ token }) {
       <div className="role-layout">
         <div className="role-list">{roles.map((role) => <button className={selected?.id === role.id ? "active" : ""} onClick={() => setSelected(role)} key={role.id}>{role.nombre}</button>)}</div>
         {selected && <div className="permissions">
-          <input value={selected.nombre} onChange={(e) => setSelected({ ...selected, nombre: e.target.value })} />
+          <input name="rol-nombre" value={selected.nombre} onChange={(e) => setSelected({ ...selected, nombre: e.target.value })} />
           {modules.map((modulo) => <div className="perm-row" key={modulo}><strong>{modulo}</strong>{ACTIONS.map((accion) => {
             const key = `${modulo}:${accion}`;
-            return <label key={key}><input type="checkbox" checked={(selected.permisos || []).includes(key)} onChange={() => toggle(key)} />{accion}</label>;
+            return <label key={key}><input name={"perm-"+key} type="checkbox" checked={(selected.permisos || []).includes(key)} onChange={() => toggle(key)} />{accion}</label>;
           })}</div>)}
           <button onClick={save}>Guardar rol</button>
         </div>}
@@ -1060,9 +999,9 @@ function ImportLogPanel({ token }) {
     <div className="panel">
       <h2>Bitacora de importaciones</h2>
       <div className="filters">
-        <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} />
-        <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} />
-        <input placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
+        <input name="log-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} />
+        <input name="log-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} />
+        <input name="log-producto" placeholder="Producto" value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={load}>Filtrar</button>
       </div>
       <div className="table">{logs.map((log) => <div className="row" key={log.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 160px", alignItems: "center" }}><div><strong>{log.producto_nombre}</strong><span className="muted">{log.archivo_origen} - {log.usuario_admin}</span></div><span>{log.tipo_cambio}</span><span className="muted">{log.fecha_hora}</span></div>)}</div>
@@ -1114,13 +1053,13 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
 
     try {
       const data = await api(token, `/transacciones?${query.toString()}`);
-      const txArr = Array.isArray(data.transactions) ? data.transactions : Array.isArray(data) ? data : [];
+      const txns = data.transactions || data;
       if (isAppend) {
-        setTransactions(prev => [...prev, ...txArr]);
+        setTransactions(prev => [...prev, ...txns]);
       } else {
-        setTransactions(txArr);
+        setTransactions(txns);
       }
-      setHasMore(txArr.length === 50);
+      setHasMore(txns.length === 50);
       if (!isAppend) setPage(1);
       else setPage(p => p + 1);
     } catch (err) {
@@ -1173,9 +1112,9 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
   return (
     <div className="transactions-list">
       <div className="transactions-filters">
-        <input type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
-        <input type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
-        <input placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
+        <input name="tx-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
+        <input name="tx-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
+        <input name="tx-producto" placeholder="Buscar producto..." value={filters.producto} onChange={(e) => setFilters({ ...filters, producto: e.target.value })} />
         <button onClick={() => load(false)}>Filtrar</button>
       </div>
 
@@ -1202,7 +1141,7 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
                     <div className="table">
                       {grouped[year][month][dateKey].map(t => (
                         <div className="row transaction-row-content" key={t.id} data-revertida={t.revertida}>
-                          <span className="muted">{t.fecha ? new Date(t.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                          <span className="muted">{t.fecha.split(" ")[1]}</span>
                           <span className={`badge ${t.tipo}`}>{t.tipo}</span>
                           <div>
                             <strong>{t.producto_nombre}</strong>
@@ -1212,8 +1151,8 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
                             </span>
                           </div>
                           <span className="stock-col">{t.cantidad} uds</span>
-                          {canRevert && !t.revertida && (
-                            <button className="danger revert-btn" onClick={() => onRevert(t)} title="Revertir transaccion">Revertir</button>
+                          {canRevert && (
+                            <button className={"danger revert-btn" + (t.revertida ? " restore-btn" : "")} onClick={() => onRevert(t)} title={t.revertida ? "Restaurar transaccion" : "Revertir transaccion"}>{t.revertida ? "Restaurar" : "Revertir"}</button>
                           )}
                         </div>
                       ))}
@@ -1306,6 +1245,114 @@ function TrashPanel({ token }) {
         </div>
       )}
     </div>
+  );
+}
+
+function Ganancias({ token }) {
+  const [data, setData] = useState({ products: [], totalGanancia: 0, totalIngresos: 0 });
+  const [evolution, setEvolution] = useState([]);
+  const [periodo, setPeriodo] = useState("mes");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [res, evo] = await Promise.all([
+        api(token, `/reportes/ganancias?periodo=${periodo}`),
+        api(token, "/reportes/ganancias/evolucion")
+      ]);
+      setData(res);
+      setEvolution(evo);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [periodo]);
+
+  const periodos = [
+    { value: "dia", label: "Hoy" },
+    { value: "semana", label: "Semana" },
+    { value: "mes", label: "Mes" }
+  ];
+
+  const perdidaCls = "col-perdida";
+  const margenBajoCls = "col-margen-bajo";
+
+  return (
+    <section className="panel ganancias-section">
+      <div className="panel-head">
+        <h2>Ganancias por producto</h2>
+        <div className="period-filters">
+          {periodos.map(p => (
+            <button key={p.value} className={`period-btn${periodo === p.value ? " active" : ""}`}
+              onClick={() => setPeriodo(p.value)}
+            >{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {!loading && (
+        <div className="metrics ganancias-metrics">
+          <Metric icon={<TrendingUp />} label="Ganancia total" value={`$${data.totalGanancia.toLocaleString()}`} />
+          <Metric icon={<ShoppingCart />} label="Ingresos totales" value={`$${data.totalIngresos.toLocaleString()}`} />
+          <Metric icon={<Boxes />} label="Productos" value={data.products.length} />
+        </div>
+      )}
+
+      {!loading && evolution.length > 0 && (
+        <div className="chart-box">
+          <h3>Evolución últimos 30 días</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={evolution} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} />
+              <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${v.toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
+              <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {loading ? <p className="muted">Cargando...</p> : data.products.length === 0 ? <p className="muted">Sin datos en este periodo.</p> : (
+        <div className="table">
+          <div className="profit-header">
+            <span>Producto</span>
+            <span className="stock-col">Costo</span>
+            <span className="stock-col">Venta</span>
+            <span className="stock-col">Ganancia/unidad</span>
+            <span className="stock-col">Margen</span>
+            <span className="stock-col">Ganancia total</span>
+          </div>
+          {data.products.map(p => {
+            const sinCosto = !p.costo || p.costo <= 0;
+            const perdida = p.costo > p.precio;
+            return (
+              <div className="row profit-row" key={p.id}>
+                <div>
+                  <strong>{p.nombre}</strong>
+                  {sinCosto && <span className="sin-costo">Sin costo registrado</span>}
+                </div>
+                <span className="stock-col">${(p.costo || 0).toLocaleString()}</span>
+                <span className="stock-col">${p.precio.toLocaleString()}</span>
+                <span className={`stock-col ${perdida ? perdidaCls : ""}`}>
+                  {perdida ? "-" : "+"}${Math.abs(p.ganancia_unitaria).toLocaleString()}
+                </span>
+                <span className={`stock-col ${perdida ? perdidaCls : p.margen < 10 ? margenBajoCls : ""}`}>
+                  {p.margen}%
+                </span>
+                <span className="stock-col col-ganancia-total">
+                  ${p.ganancia_total.toLocaleString()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

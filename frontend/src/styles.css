@@ -164,6 +164,11 @@ label { display: grid; gap: var(--space-xs); font-weight: 700; font-size: var(--
 .panel-tools { display: flex; align-items: center; gap: var(--space-sm); }
 .search { display: flex; align-items: center; gap: var(--space-sm); }
 .search input { width: 180px; }
+.search .spinner {
+  width: 16px; height: 16px; border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.7s linear infinite; margin-left: auto; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Product form */
 .product-form { display: grid; grid-template-columns: 1fr 100px 130px 130px 42px 42px; gap: var(--space-sm); }
