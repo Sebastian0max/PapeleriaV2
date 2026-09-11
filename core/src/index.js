@@ -56,6 +56,8 @@ console.log(`[server] Listening on ${config.host}:${config.port}`);
 
 // Descargar DB de Supabase en segundo plano (no bloquea el arranque)
 if (!isPostgres) {
-  const { downloadDb } = await import("./services/cloud-backup.js");
-  downloadDb().catch((err) => console.error("[startup] DB download error:", err.message));
+  const { downloadDb, startPeriodicBackup } = await import("./services/cloud-backup.js");
+  downloadDb()
+    .catch((err) => console.error("[startup] DB download error:", err.message))
+    .finally(() => startPeriodicBackup());
 }
