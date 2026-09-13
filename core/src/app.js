@@ -17,6 +17,7 @@ import { transactionsRoutes } from "./routes/transactions-routes.js";
 import { userRoutes } from "./routes/users-routes.js";
 import { getUserWithPermissions, hasPermission } from "./services/permissions-service.js";
 import { initSentry } from "./services/sentry.js";
+import { registerErrorHandler } from "./services/error-handler.js";
 
 const isPostgres = !!process.env.SUPABASE_DATABASE_URL;
 
@@ -94,7 +95,8 @@ export function buildApp() {
     registerRoutes(app);
   }
 
-  initSentry(app);
+  initSentry();
+  registerErrorHandler(app);
 
   app.setNotFoundHandler((request, reply) => {
     const { method, url } = request.raw;

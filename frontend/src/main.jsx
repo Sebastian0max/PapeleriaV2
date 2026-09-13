@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Boxes,
   Download,
   FileText,
+  Loader2,
   LogOut,
   Moon,
   PackagePlus,
@@ -82,23 +83,38 @@ async function downloadExcel(token, path, filename, onError) {
     else alert("Error al exportar: " + err.message);
   }
 }
+// Timeout por defecto para peticiones (ms). Login tiene timeout más largo.
+const API_TIMEOUT = 30000; // 30s para peticiones generales
+
 function api(token, path, options = {}) {
   const isForm = options.body instanceof FormData;
   const hasJsonBody = options.body && !isForm;
   const base = API_URL.replace(/\/+$/, '');
   const cleanPath = normalizePath(path);
+  // Timeout configurable por petición (Login usa 60s)
+  const timeout = options.timeout ?? API_TIMEOUT;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
   return fetch(`${base}${cleanPath}`, {
     ...options,
+    signal: controller.signal,
     headers: {
       ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {})
     }
   }).then(async (res) => {
+    clearTimeout(id);
     const type = res.headers.get("content-type") || "";
     const data = type.includes("application/json") ? await res.json() : await res.text();
     if (!res.ok) throw new Error(data.message || data || "Error de servidor");
     return data;
+  }).catch(async (err) => {
+    clearTimeout(id);
+    if (err.name === "AbortError") {
+      throw new Error(`La petición a ${path} tardó más de ${timeout/1000}s. Reintentá o revisá la conexión.`);
+    }
+    throw err;
   });
 }
 
@@ -125,10 +141,12 @@ function Login({ onLogin }) {
   const [error, setError] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const lockRef = useRef(false);
 
   async function submit(event) {
     event.preventDefault();
-    if (loading) return;
+    if (loading || lockRef.current) return;
+    lockRef.current = true;
     setError("");
     setLoading(true);
     try {
@@ -141,6 +159,7 @@ function Login({ onLogin }) {
       setError(err.message);
     } finally {
       setLoading(false);
+      lockRef.current = false;
     }
   }
 
@@ -158,7 +177,7 @@ function Login({ onLogin }) {
   );
 }
 
-function ConfirmModal({ isOpen, title, content, onConfirm, onCancel }) {
+function ConfirmModal({ isOpen, title, content, onConfirm, onCancel, busy }) {
   if (!isOpen) return null;
   return (
     <div className="modal-overlay">
@@ -166,8 +185,8 @@ function ConfirmModal({ isOpen, title, content, onConfirm, onCancel }) {
         <h3>{title}</h3>
         <p style={{ whiteSpace: "pre-line", margin: "16px 0" }}>{content}</p>
         <div className="modal-actions" style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-          <button className="danger" onClick={onConfirm}>Si, eliminar</button>
-          <button onClick={onCancel}>Cancelar</button>
+          <button className="danger" onClick={onConfirm} disabled={busy}>{busy ? <Loader2 size={16} className="spin" /> : null}Si, eliminar</button>
+          <button onClick={onCancel} disabled={busy}>Cancelar</button>
         </div>
       </div>
     </div>
@@ -234,8 +253,8 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
 function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const token = session.token;
   const permissions = session.user.permisos || [];
-  const can = (key) => session.user.rol === "admin" || permissions.includes(key);
-  const canAdmin = (key) => session.user.rol === "admin" && can(key);
+  const can = useCallback((key) => session.user.rol === "admin" || permissions.includes(key), [permissions, session]);
+  const canAdmin = useCallback((key) => session.user.rol === "admin" && can(key), [can, session]);
   const [view, setView] = useState("inventario");
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
@@ -250,7 +269,15 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   function toggleExportMenu() { setShowExportMenu(s => !s); }
+
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const searchRef = useRef(search);
+  searchRef.current = search;
+
+  const notify = useCallback((m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }, []);
 
   useEffect(() => {
     if (!showExportMenu) return;
@@ -261,15 +288,16 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
 
   async function confirmDeleteSale() {
     if (!saleToDelete) return;
+    setDeleting(true);
     try {
       const result = await api(token, `/ventas/${saleToDelete.id}`, { method: "DELETE" });
       setMessage(result.message || "Venta eliminada");
       setTimeout(() => setMessage(""), 5000);
-      load();
       setReloadKey(k => k + 1);
     } catch (err) {
       setError(err.message);
     }
+    setDeleting(false);
     setSaleToDelete(null);
   }
 
@@ -284,7 +312,6 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       setTimeout(() => setMessage(""), 5000);
       setRevertTarget(null);
       setReloadKey(k => k + 1);
-      load();
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -293,6 +320,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
 
   async function confirmDeleteProduct() {
     if (!productToDelete) return;
+    setDeleting(true);
     try {
       console.log(`[Frontend] Confirmando eliminación de producto ${productToDelete.id}`);
       const result = await api(token, `/productos/${productToDelete.id}`, { method: "DELETE" });
@@ -304,17 +332,19 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       console.error("[Frontend] Error al eliminar producto:", err);
       alert("Error al eliminar: " + err.message);
     }
+    setDeleting(false);
     setProductToDelete(null);
   }
 
-  async function load(searchOverride = search) {
+  const load = useCallback(async (searchOverride) => {
     setIsLoading(true);
     try {
+      const currentSearch = searchOverride !== undefined ? searchOverride : searchRef.current;
       const results = await Promise.allSettled([
-        can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(searchOverride)}`) : Promise.resolve(null),
+        can("productos:ver") ? api(token, `/productos?search=${encodeURIComponent(currentSearch)}`) : Promise.resolve(null),
         can("ventas:ver") ? api(token, "/ventas") : Promise.resolve(null),
         can("reportes:ver") ? api(token, "/reportes/stock") : Promise.resolve(null),
-        can("reportes:ver") ? api(token, "/reportes/ganancias?periodo=dia") : Promise.resolve(null)
+        can("reportes:ver") && viewRef.current !== "ganancias" ? api(token, "/reportes/ganancias?periodo=dia") : Promise.resolve(null)
       ]);
       const [productResult, saleResult, reportResult, profitResult] = results;
       if (productResult.status === "fulfilled" && productResult.value?.products) setProducts(productResult.value.products);
@@ -327,14 +357,14 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     } catch (err) {
       setError(err.message);
     }
-  }
+  }, [token, can]);
 
   useEffect(() => {
     if (!search) { load(""); return; }
     const t = setTimeout(() => { setIsLoading(true); load(search); }, 400);
     return () => clearTimeout(t);
   }, [search]);
-  useEffect(() => { if (view !== "config") load(); }, [reloadKey]);
+  useEffect(() => { if (reloadKey > 0) load(); }, [reloadKey]);
 
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
   const showConfig = session.user.rol === "admin" && can("configuracion:ver");
@@ -380,7 +410,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
           {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
-          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-warning" />}
+          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-danger" />}
           {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} className="metric-warning" />}
         </section>
       )}
@@ -395,7 +425,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
             <div className="table">
               {products.map((product) => (
-                <ProductRow key={product.id} product={product} token={token} onDone={load} onMessage={(m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }} can={canAdmin} onDeleteRequest={setProductToDelete} />
+                <ProductRow key={product.id} product={product} token={token} onDone={load} onMessage={notify} can={canAdmin} onDeleteRequest={setProductToDelete} />
               ))}
             </div>
           </div>
@@ -412,7 +442,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
             <div className="panel-head">
               <h2>Vender</h2>
             </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => { load(); setReloadKey(k => k + 1); }} />}
+            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => setReloadKey(k => k + 1)} />}
             <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
           </div>
           <div className="panel side-panel">
@@ -426,10 +456,9 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
 
       {view === "ganancias" && <Ganancias token={token} />}
 
-      {view === "config" && <Config token={token} can={can} onImported={async (msg) => {
+      {view === "config" && <Config token={token} can={can} onImported={(msg) => {
         if (msg) { setMessage(msg); setTimeout(() => setMessage(""), 6000); }
         setSearch("");
-        await load("");
         setReloadKey(k => k + 1);
         setView("inventario");
       }} />}
@@ -439,6 +468,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
         content={saleToDelete ? `Producto: ${saleToDelete.producto_nombre}\nCantidad: ${saleToDelete.cantidad}\nTotal: $${saleToDelete.total}\nFecha: ${saleToDelete.fecha}\n\n¿Estas seguro de anular esta venta? El stock será devuelto al inventario.` : ""}
         onConfirm={confirmDeleteSale}
         onCancel={() => setSaleToDelete(null)}
+        busy={deleting}
       />
       <ConfirmModal
         isOpen={!!productToDelete}
@@ -446,6 +476,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
         content={productToDelete ? `Producto: ${productToDelete.nombre}\nCantidad en stock: ${productToDelete.cantidad_stock}\n\n¿Estás seguro de eliminar este producto?` : ""}
         onConfirm={confirmDeleteProduct}
         onCancel={() => setProductToDelete(null)}
+        busy={deleting}
       />
       <RevertModal
         isOpen={!!revertTarget}
@@ -494,21 +525,46 @@ function ProductForm({ token, onDone }) {
   );
 }
 
-function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest }) {
+const ProductRow = React.memo(function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [busyAction, setBusyAction] = useState(null);
 
   async function move(tipo) {
-    const cantidad = Number(prompt(`Cantidad para ${tipo}`, "1"));
-    if (!cantidad) return;
-    await api(token, `/productos/${product.id}/movimientos`, {
-      method: "POST",
-      body: JSON.stringify({ tipo, cantidad })
-    });
-    onDone();
+    const input = prompt(`Cantidad para ${tipo}`, "1");
+    if (input === null) return;
+    const cantidad = Number(input);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      onMessage("La cantidad debe ser un número mayor a 0.");
+      return;
+    }
+    if (tipo === "salida") {
+      const stock = Number(product.cantidad_stock) || 0;
+      if (stock <= 0) {
+        onMessage(`"${product.nombre}" no tiene stock disponible (0 uds).`);
+        return;
+      }
+      if (cantidad > stock) {
+        onMessage(`No hay suficiente stock: solo hay ${stock} uds de "${product.nombre}".`);
+        return;
+      }
+    }
+    setBusyAction(tipo);
+    try {
+      await api(token, `/productos/${product.id}/movimientos`, {
+        method: "POST",
+        body: JSON.stringify({ tipo, cantidad })
+      });
+      await onDone();
+    } catch (err) {
+      onMessage("Error al mover stock: " + err.message);
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   function startEdit() {
+    if (busyAction) return;
     setEditForm({
       nombre: product.nombre,
       precio: product.precio,
@@ -516,9 +572,11 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
       cantidad_stock: product.cantidad_stock
     });
     setIsEditing(true);
+    onMessage(`Modo edición activado para "${product.nombre}". Pulsa Guardar para confirmar.`);
   }
 
   async function saveEdit() {
+    setBusyAction("guardar");
     try {
       const payload = {
         nombre: editForm.nombre,
@@ -534,6 +592,8 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
       await onDone();
     } catch (err) {
       alert("Error al guardar: " + err.message);
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -547,8 +607,8 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
           <label>Venta<input name="edit-precio" type="number" min="0" value={editForm.precio} onChange={(e) => setEditForm({ ...editForm, precio: e.target.value })} /></label>
         </div>
         <div className="actions">
-          <button onClick={saveEdit}>Guardar</button>
-          <button className="danger" onClick={() => setIsEditing(false)}>Cancelar</button>
+          <button onClick={saveEdit} disabled={busyAction !== null}>{busyAction === "guardar" ? <Loader2 size={16} className="spin" /> : "Guardar"}</button>
+          <button className="danger" onClick={() => setIsEditing(false)} disabled={busyAction !== null}>Cancelar</button>
         </div>
       </div>
     );
@@ -564,14 +624,14 @@ function ProductRow({ product, token, onDone, onMessage, can, onDeleteRequest })
       </div>
       <span className="stock-col">{product.cantidad_stock} uds</span>
       <div className="actions">
-        {can("stock:crear") && <button onClick={() => move("entrada")} title="Añadir stock">+</button>}
-        {can("stock:crear") && <button onClick={() => move("salida")} title="Restar stock">-</button>}
-        {can("productos:editar") && <button onClick={startEdit}>Editar</button>}
-        {can("productos:eliminar") && <button className="danger" onClick={() => onDeleteRequest(product)} title="Eliminar"><Trash2 size={16} /></button>}
+        {can("stock:crear") && <button className="icon-only" onClick={() => move("entrada")} title="Añadir stock" disabled={busyAction !== null}>{busyAction === "entrada" ? <Loader2 size={16} className="spin" /> : "+"}</button>}
+        {can("stock:crear") && <button className="icon-only" onClick={() => move("salida")} title="Restar stock" disabled={busyAction !== null}>{busyAction === "salida" ? <Loader2 size={16} className="spin" /> : "-"}</button>}
+        {can("productos:editar") && <button onClick={startEdit} disabled={busyAction !== null}>Editar</button>}
+        {can("productos:eliminar") && <button className="danger icon-only" onClick={() => onDeleteRequest(product)} title="Eliminar" disabled={busyAction !== null}><Trash2 size={16} /></button>}
       </div>
     </div>
   );
-}
+});
 
 function SaleForm({ token, products, onDone }) {
   const [productoId, setProductoId] = useState(0);
@@ -617,7 +677,7 @@ function SaleForm({ token, products, onDone }) {
 
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId: Number(productoId), cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
       setCantidad("1");
@@ -650,8 +710,8 @@ function SaleForm({ token, products, onDone }) {
         </div>
       )}
       <input name="cantidad" type="number" min="1" placeholder="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-      <button title="Vender" disabled={busy}>
-        <ShoppingCart size={18} />
+      <button title="Vender" type="submit" disabled={busy}>
+        {busy ? <Loader2 size={18} className="spin" /> : <ShoppingCart size={18} />}
       </button>
       {selectedProduct && +cantidad > 0 && (
         <div className="stock-info total-display">
@@ -694,7 +754,7 @@ function Report({ report }) {
       {ingresos != null && (
         <div className="report-revenue-total">
           <span>Total ingresos</span>
-          <strong>${ingresos}</strong>
+          <strong>${Number(ingresos).toLocaleString("es-MX")}</strong>
         </div>
       )}
     </div>
@@ -706,20 +766,39 @@ function Report({ report }) {
       <span className="stock-count">{p.cantidad_stock} uds</span>
     </div>
   );
+  const renderLessSold = (title, items) => {
+    if (!items?.length) return null;
+    const sinVentas = items.every(p => !p.vendidos);
+    return (
+      <>
+        <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>{title}</h3>
+        <div className="report-section">
+          {sinVentas ? (
+            <p className="muted">Aún no hay ventas registradas en este periodo.</p>
+          ) : items.map((p, i) => (
+            <div className="report-line" key={p.id}>
+              <span><RankBadge i={i} />{p.nombre}</span>
+              <strong>{p.vendidos} {p.vendidos === 1 ? "ud vendida" : "uds vendidas"}</strong>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  };
   return (
     <div className="report">
       <div className="report-summary">
         <div className="report-summary-card">
           <span className="label">Hoy</span>
-          <span className="value">${report.ventasDia.ingresos}</span>
+          <span className="value">${Number(report.ventasDia.ingresos).toLocaleString("es-MX")}</span>
         </div>
         <div className="report-summary-card">
           <span className="label">Semana</span>
-          <span className="value">${report.ventasSemana.ingresos}</span>
+          <span className="value">${Number(report.ventasSemana.ingresos).toLocaleString("es-MX")}</span>
         </div>
         <div className="report-summary-card">
           <span className="label">Mes</span>
-          <span className="value">${report.ventasMes.ingresos}</span>
+          <span className="value">${Number(report.ventasMes.ingresos).toLocaleString("es-MX")}</span>
         </div>
       </div>
 
@@ -732,33 +811,9 @@ function Report({ report }) {
       <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Mes</h3>
       {renderTopList(report.ventasMes.top, report.ventasMes.ingresos)}
 
-      {report.menosVendidosSemana?.length > 0 && (
-        <>
-          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (semana)</h3>
-          <div className="report-section">
-            {report.menosVendidosSemana.map((p, i) => (
-              <div className="report-line" key={p.id}>
-                <span><RankBadge i={i} />{p.nombre}</span>
-                <strong>{p.vendidos} uds</strong>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      {renderLessSold("Menos vendidos (semana)", report.menosVendidosSemana)}
 
-      {report.menosVendidosMes?.length > 0 && (
-        <>
-          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (mes)</h3>
-          <div className="report-section">
-            {report.menosVendidosMes.map((p, i) => (
-              <div className="report-line" key={p.id}>
-                <span><RankBadge i={i} />{p.nombre}</span>
-                <strong>{p.vendidos} uds</strong>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      {renderLessSold("Menos vendidos (mes)", report.menosVendidosMes)}
 
       {(report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
         <>
@@ -869,15 +924,15 @@ function ImportPanel({ token, onImported }) {
       </div>
       <form className="upload-line" onSubmit={importFile}>
         <input name="import-file" type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-        <button disabled={busy || !file}><Upload size={17} />{busy ? "Importando" : "Importar"}</button>
+        <button disabled={busy || !file}>{busy ? <Loader2 size={17} className="spin" /> : <Upload size={17} />}{busy ? "Importando" : "Importar"}</button>
       </form>
       {message && <p className="success">{message}</p>}
-      {preview && <ImportPreview preview={preview} onConfirm={confirmImport} />}
+      {preview && <ImportPreview preview={preview} onConfirm={confirmImport} busy={busy} />}
     </div>
   );
 }
 
-function ImportPreview({ preview, onConfirm }) {
+function ImportPreview({ preview, onConfirm, busy }) {
   const reductions = preview.actualizados.filter((item) => item.disminuyeStock).length;
   const total = preview.nuevos.length + preview.actualizados.length + preview.errores.length + preview.unchanged;
   return (
@@ -894,7 +949,7 @@ function ImportPreview({ preview, onConfirm }) {
       <PreviewTable rows={preview.actualizados.map((x) => ({ row: x.rowNumber, nombre: x.nombre, stock: `${x.anterior.cantidad_stock} -> ${x.nuevo.cantidad_stock ?? x.anterior.cantidad_stock}`, precio: `${x.anterior.precio} -> ${x.nuevo.precio ?? x.anterior.precio}`, alerta: x.disminuyeStock ? "Disminuye stock" : "" }))} />
       <h3>Filas con errores ({preview.errores.length})</h3>
       <PreviewTable rows={preview.errores.map((x) => ({ row: x.rowNumber, nombre: x.row.nombre || "Fila sin nombre", stock: x.row.cantidad ?? "-", precio: x.row.precio ?? "-", alerta: x.errores.join(", ") }))} />
-      <button onClick={onConfirm}>Confirmar importacion</button>
+      <button onClick={onConfirm} disabled={busy}>{busy ? <Loader2 size={17} className="spin" /> : null}Confirmar importacion</button>
     </div>
   );
 }
@@ -1073,7 +1128,10 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
     }
   }
 
-  useEffect(() => { load(); }, [tipoFilter, reloadKey]);
+  useEffect(() => {
+    const t = setTimeout(() => load(), 200);
+    return () => clearTimeout(t);
+  }, [tipoFilter, reloadKey]);
 
   // Agrupacion Año -> Mes -> Día
   const grouped = useMemo(() => {
@@ -1181,6 +1239,8 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
 function TrashPanel({ token }) {
   const [products, setProducts] = useState([]);
   const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState(null);
 
   async function load() {
     try {
@@ -1194,23 +1254,29 @@ function TrashPanel({ token }) {
   useEffect(() => { load(); }, []);
 
   async function restore(id) {
+    setBusyId(id);
     try {
       await api(token, `/productos/${id}/restaurar`, { method: "POST" });
       setMessage("Producto restaurado correctamente.");
       load();
     } catch (err) {
       setMessage("Error al restaurar: " + err.message);
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function purgeAll() {
     if (!confirm("¿Eliminar fisicamente todos los productos en la papelera con mas de 7 dias?")) return;
+    setBusy(true);
     try {
       const result = await api(token, "/productos/purgar", { method: "POST" });
       setMessage(`Papelera purgada: ${result.purged} productos eliminados.`);
       load();
     } catch (err) {
       setMessage("Error al purgar: " + err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1226,7 +1292,7 @@ function TrashPanel({ token }) {
     <div className="panel">
       <div className="panel-head">
         <h2>Papelera</h2>
-        <button className="danger" onClick={purgeAll}><Trash2 size={16} />Purgar antiguos</button>
+        <button className="danger" onClick={purgeAll} disabled={busy}>{busy ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}Purgar antiguos</button>
       </div>
       {message && <p className="success">{message}</p>}
       {products.length === 0 ? (
@@ -1244,7 +1310,7 @@ function TrashPanel({ token }) {
               <span className="stock-col">{p.cantidad_stock} uds</span>
               <span className="trash-timer"><Clock size={14} />{daysRemaining(p.fecha_eliminacion)}</span>
               <div className="actions">
-                <button onClick={() => restore(p.id)} title="Restaurar"><RotateCcw size={16} /></button>
+                <button className="icon-only" onClick={() => restore(p.id)} title="Restaurar" disabled={busyId === p.id}>{busyId === p.id ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}</button>
               </div>
             </div>
           ))}
@@ -1276,7 +1342,10 @@ function Ganancias({ token }) {
     }
   }
 
-  useEffect(() => { load(); }, [periodo]);
+  useEffect(() => {
+    const t = setTimeout(() => load(), 200);
+    return () => clearTimeout(t);
+  }, [periodo]);
 
   const periodos = [
     { value: "dia", label: "Hoy" },
