@@ -646,7 +646,6 @@ function SaleForm({ token, products, onDone }) {
   useEffect(() => {
     const prod = products.find(p => p.id === productoId);
     setSelectedProduct(prod || null);
-    setMessage("");
     setError("");
   }, [productoId, products]);
 
@@ -676,6 +675,7 @@ function SaleForm({ token, products, onDone }) {
     }
 
     setBusy(true);
+    setMessage("");
     try {
       await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
