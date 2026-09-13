@@ -5,11 +5,6 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "workspaces": [
-    "core",
-    "shared",
-    "frontend"
-  ],
   "scripts": {
     "build": "npm install --prefix core --omit=dev",
     "start": "node core/src/index.js"
