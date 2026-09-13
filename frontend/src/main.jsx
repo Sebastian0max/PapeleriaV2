@@ -1377,18 +1377,36 @@ function Ganancias({ token }) {
         </div>
       )}
 
-      {!loading && evolution.length > 0 && (
+      {!loading && (
         <div className="chart-box">
           <h3>Evolución últimos 30 días</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={evolution} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} />
-              <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${v.toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
-              <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {(() => {
+            const days = [];
+            const now = new Date();
+            for (let i = 29; i >= 0; i--) {
+              const d = new Date(now);
+              d.setDate(now.getDate() - i);
+              days.push({ dia: d.toISOString().slice(0, 10), ganancia: 0 });
+            }
+            const map = {};
+            for (const e of evolution) if (e && e.dia) map[String(e.dia).slice(0, 10)] = Number(e.ganancia) || 0;
+            const filled = days.map(d => ({ ...d, ganancia: map[d.dia] || 0 }));
+            const sinDatos = filled.every(d => !d.ganancia);
+            return (
+              <>
+                {sinDatos && <p className="muted" style={{ margin: "0 0 var(--space-md)" }}>Aún no hay ganancias registradas en los últimos 30 días.</p>}
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={filled} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${Number(v ?? 0).toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
+                    <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
+            );
+          })()}
         </div>
       )}
 
