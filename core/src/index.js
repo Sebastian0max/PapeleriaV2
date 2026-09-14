@@ -25,8 +25,8 @@ if (isPostgres) {
   } catch (err) {
     console.error(`[startup] Error purgando canceladas: ${err.message}`);
   }
-  const { startPeriodicBackup, flushOnShutdown } = await import("./services/cloud-backup.js");
-  startPeriodicBackup();
+  const { downloadDb, scheduleDbUpload, flushOnShutdown } = await import("./services/cloud-backup.js");
+  downloadDb().catch(()=>{});
   setInterval(async () => {
     const h = new Date().getHours();
     if (h === 3) {
