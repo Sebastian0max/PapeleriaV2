@@ -1,8 +1,8 @@
-import { buildApp } from "./app.js";
+﻿import { buildApp } from "./app.js";
 import { config } from "./config.js";
 import { getDb } from "./db/connection.js";
 import { purgeOldTrash } from "./services/products-service.js";
-import { purgeOldCanceled } from "./services/transactions-service.js";
+import { purgeOldCancelled } from "./services/transactions-service.js";
 
 const isPostgres = !!process.env.SUPABASE_DATABASE_URL;
 
@@ -20,7 +20,7 @@ if (isPostgres) {
     console.error(`[startup] Error purgando papelera: ${err.message}`);
   }
   try {
-    const purgedCanceled = purgeOldCanceled(7);
+    const purgedCanceled = purgeOldCancelled(7);
     console.log(`[startup] Canceladas: ${purgedCanceled.purged} transacciones purgadas.`);
   } catch (err) {
     console.error(`[startup] Error purgando canceladas: ${err.message}`);
