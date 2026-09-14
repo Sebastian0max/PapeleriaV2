@@ -20,7 +20,7 @@ export async function authRoutes(app) {
       resetRateLimit(`login:${ip}`);
       return reply.code(401).send({ message: "Usuario o password incorrectos" });
     }
-    const passwordOk = await bcrypt.compare(input.password, user.password_hash);
+    const passwordOk = await verifyPassword(input.password, user.password_hash);
     resetRateLimit(`login:${ip}`);
     if (!passwordOk) {
       return reply.code(401).send({ message: "Usuario o password incorrectos" });
