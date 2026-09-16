@@ -620,7 +620,7 @@ const ProductRow = React.memo(function ProductRow({ product, token, onDone, onMe
   return (
     <div className="row product-row">
       <div className="product-title">
-        <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
+        <div><strong>{product.nombre}</strong> <span>${product.precio}</span></div>
       </div>
       <span className="stock-col">{product.cantidad_stock} uds</span>
       <div className="actions">
@@ -677,6 +677,7 @@ function SaleForm({ token, products, onDone }) {
     setBusy(true);
     setMessage("");
     try {
+      console.log("DEBUG productoId al vender:", productoId, "| typeof:", typeof productoId, "| cantidad:", cantidad);
       await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
