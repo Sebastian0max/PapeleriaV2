@@ -748,7 +748,7 @@ function Report({ report }) {
     <div className="report-section">
       {items.length === 0 ? <p className="muted">Sin ventas</p> : items.map((p, i) => (
         <div className="report-line" key={p.id}>
-          <span><RankBadge i={i} />{p.nombre}</span>
+          <span className="top-name"><RankBadge i={i} />{p.nombre}</span>
           <strong>{p.cantidad} uds</strong>
         </div>
       ))}
@@ -778,7 +778,7 @@ function Report({ report }) {
             <p className="muted">Aún no hay ventas registradas en este periodo.</p>
           ) : items.map((p, i) => (
             <div className="report-line" key={p.id}>
-              <span><RankBadge i={i} />{p.nombre}</span>
+          <span className="top-name"><RankBadge i={i} />{p.nombre}</span>
               <strong>{p.vendidos} {p.vendidos === 1 ? "ud vendida" : "uds vendidas"}</strong>
             </div>
           ))}
