@@ -83,38 +83,23 @@ async function downloadExcel(token, path, filename, onError) {
     else alert("Error al exportar: " + err.message);
   }
 }
-// Timeout por defecto para peticiones (ms). Login tiene timeout más largo.
-const API_TIMEOUT = 30000; // 30s para peticiones generales
-
 function api(token, path, options = {}) {
   const isForm = options.body instanceof FormData;
   const hasJsonBody = options.body && !isForm;
   const base = API_URL.replace(/\/+$/, '');
   const cleanPath = normalizePath(path);
-  // Timeout configurable por petición (Login usa 60s)
-  const timeout = options.timeout ?? API_TIMEOUT;
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
   return fetch(`${base}${cleanPath}`, {
     ...options,
-    signal: controller.signal,
     headers: {
       ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {})
     }
   }).then(async (res) => {
-    clearTimeout(id);
     const type = res.headers.get("content-type") || "";
     const data = type.includes("application/json") ? await res.json() : await res.text();
     if (!res.ok) throw new Error(data.message || data || "Error de servidor");
     return data;
-  }).catch(async (err) => {
-    clearTimeout(id);
-    if (err.name === "AbortError") {
-      throw new Error(`La petición a ${path} tardó más de ${timeout/1000}s. Reintentá o revisá la conexión.`);
-    }
-    throw err;
   });
 }
 
@@ -410,7 +395,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
           <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
           {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
-          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-danger" />}
+          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-warning" />}
           {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} className="metric-warning" />}
         </section>
       )}
@@ -620,7 +605,7 @@ const ProductRow = React.memo(function ProductRow({ product, token, onDone, onMe
   return (
     <div className="row product-row">
       <div className="product-title">
-        <div><strong>{product.nombre}</strong> <span>${product.precio}</span></div>
+        <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
       </div>
       <span className="stock-col">{product.cantidad_stock} uds</span>
       <div className="actions">
@@ -646,6 +631,7 @@ function SaleForm({ token, products, onDone }) {
   useEffect(() => {
     const prod = products.find(p => p.id === productoId);
     setSelectedProduct(prod || null);
+    setMessage("");
     setError("");
   }, [productoId, products]);
 
@@ -675,10 +661,8 @@ function SaleForm({ token, products, onDone }) {
     }
 
     setBusy(true);
-    setMessage("");
     try {
-      console.log("DEBUG productoId al vender:", productoId, "| typeof:", typeof productoId, "| cantidad:", cantidad);
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad }) });
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId: Number(productoId), cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
       setCantidad("1");
@@ -735,6 +719,14 @@ function SaleForm({ token, products, onDone }) {
 
 function Report({ report }) {
   if (!report) return null;
+  const [stockBusqueda, setStockBusqueda] = useState("");
+  const [stockVerTodos, setStockVerTodos] = useState(false);
+  const STOCK_LIMIT = 10;
+  const queryStock = (items = []) => {
+    const q = stockBusqueda.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((p) => (p.nombre || "").toLowerCase().includes(q));
+  };
   const RankBadge = ({ i }) => {
     const cls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "rank-n";
     return <span className={`rank ${cls}`}>{i + 1}</span>;
@@ -748,14 +740,14 @@ function Report({ report }) {
     <div className="report-section">
       {items.length === 0 ? <p className="muted">Sin ventas</p> : items.map((p, i) => (
         <div className="report-line" key={p.id}>
-          <span className="top-name"><RankBadge i={i} />{p.nombre}</span>
+          <span><RankBadge i={i} />{p.nombre}</span>
           <strong>{p.cantidad} uds</strong>
         </div>
       ))}
       {ingresos != null && (
         <div className="report-revenue-total">
           <span>Total ingresos</span>
-          <strong>${Number(ingresos).toLocaleString("es-MX")}</strong>
+          <strong>${ingresos}</strong>
         </div>
       )}
     </div>
@@ -767,39 +759,20 @@ function Report({ report }) {
       <span className="stock-count">{p.cantidad_stock} uds</span>
     </div>
   );
-  const renderLessSold = (title, items) => {
-    if (!items?.length) return null;
-    const sinVentas = items.every(p => !p.vendidos);
-    return (
-      <>
-        <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>{title}</h3>
-        <div className="report-section">
-          {sinVentas ? (
-            <p className="muted">Aún no hay ventas registradas en este periodo.</p>
-          ) : items.map((p, i) => (
-            <div className="report-line" key={p.id}>
-          <span className="top-name"><RankBadge i={i} />{p.nombre}</span>
-              <strong>{p.vendidos} {p.vendidos === 1 ? "ud vendida" : "uds vendidas"}</strong>
-            </div>
-          ))}
-        </div>
-      </>
-    );
-  };
   return (
     <div className="report">
       <div className="report-summary">
         <div className="report-summary-card">
           <span className="label">Hoy</span>
-          <span className="value">${Number(report.ventasDia.ingresos).toLocaleString("es-MX")}</span>
+          <span className="value">${report.ventasDia.ingresos}</span>
         </div>
         <div className="report-summary-card">
           <span className="label">Semana</span>
-          <span className="value">${Number(report.ventasSemana.ingresos).toLocaleString("es-MX")}</span>
+          <span className="value">${report.ventasSemana.ingresos}</span>
         </div>
         <div className="report-summary-card">
           <span className="label">Mes</span>
-          <span className="value">${Number(report.ventasMes.ingresos).toLocaleString("es-MX")}</span>
+          <span className="value">${report.ventasMes.ingresos}</span>
         </div>
       </div>
 
@@ -812,16 +785,68 @@ function Report({ report }) {
       <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Top del Mes</h3>
       {renderTopList(report.ventasMes.top, report.ventasMes.ingresos)}
 
-      {renderLessSold("Menos vendidos (semana)", report.menosVendidosSemana)}
+      {report.menosVendidosSemana?.length > 0 && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (semana)</h3>
+          <div className="report-section">
+            {report.menosVendidosSemana.map((p, i) => (
+              <div className="report-line" key={p.id}>
+                <span><RankBadge i={i} />{p.nombre}</span>
+                <strong>{p.vendidos} uds</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      {renderLessSold("Menos vendidos (mes)", report.menosVendidosMes)}
+      {report.menosVendidosMes?.length > 0 && (
+        <>
+          <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Menos vendidos (mes)</h3>
+          <div className="report-section">
+            {report.menosVendidosMes.map((p, i) => (
+              <div className="report-line" key={p.id}>
+                <span><RankBadge i={i} />{p.nombre}</span>
+                <strong>{p.vendidos} uds</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {(report.agotados?.length > 0 || report.bajoStock?.length > 0) && (
         <>
           <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Alertas de Stock</h3>
           <div className="report-section">
-            {report.agotados?.map(p => renderStockRow(p, false))}
-            {report.bajoStock?.map(p => renderStockRow(p, true))}
+            <div className="stock-alert-search">
+              <Search size={14} />
+              <input type="search" placeholder="Buscar producto..." value={stockBusqueda} onChange={(e) => setStockBusqueda(e.target.value)} />
+            </div>
+            {report.agotados?.length > 0 && (
+              <>
+                <h4 className="stock-alert-group-title">
+                  <span className={`stock-dot dot-out`} />Agotados
+                  <span className="count">{queryStock(report.agotados).length}</span>
+                </h4>
+                {queryStock(report.agotados).slice(0, stockVerTodos ? undefined : STOCK_LIMIT).map(p => renderStockRow(p, false, "out"))}
+              </>
+            )}
+            {report.bajoStock?.length > 0 && (
+              <>
+                <h4 className="stock-alert-group-title">
+                  <span className={`stock-dot dot-low`} />Stock bajo
+                  <span className="count">{queryStock(report.bajoStock).length}</span>
+                </h4>
+                {queryStock(report.bajoStock).slice(0, stockVerTodos ? undefined : STOCK_LIMIT).map(p => renderStockRow(p, true, "low"))}
+              </>
+            )}
+            {stockBusqueda && queryStock([...(report.agotados||[]), ...(report.bajoStock||[])]).length === 0 && (
+              <p className="muted">Sin resultados para "{stockBusqueda}"</p>
+            )}
+            {stockBusqueda === "" && ((report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)) > STOCK_LIMIT && (
+              <button className="button-text" onClick={() => setStockVerTodos(v => !v)}>
+                {stockVerTodos ? "Mostrar menos" : `Ver todos (${(report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)})`}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -1378,36 +1403,18 @@ function Ganancias({ token }) {
         </div>
       )}
 
-      {!loading && (
+      {!loading && evolution.length > 0 && (
         <div className="chart-box">
           <h3>Evolución últimos 30 días</h3>
-          {(() => {
-            const days = [];
-            const now = new Date();
-            for (let i = 29; i >= 0; i--) {
-              const d = new Date(now);
-              d.setDate(now.getDate() - i);
-              days.push({ dia: d.toISOString().slice(0, 10), ganancia: 0 });
-            }
-            const map = {};
-            for (const e of evolution) if (e && e.dia) map[String(e.dia).slice(0, 10)] = Number(e.ganancia) || 0;
-            const filled = days.map(d => ({ ...d, ganancia: map[d.dia] || 0 }));
-            const sinDatos = filled.every(d => !d.ganancia);
-            return (
-              <>
-                {sinDatos && <p className="muted" style={{ margin: "0 0 var(--space-md)" }}>Aún no hay ganancias registradas en los últimos 30 días.</p>}
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={filled} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} allowDecimals={false} />
-                    <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${Number(v ?? 0).toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
-                    <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </>
-            );
-          })()}
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={evolution} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10, fill: "var(--text-secondary)" }} />
+              <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "12px" }} formatter={(v) => [`$${v.toLocaleString()}`, "Ganancia"]} labelFormatter={(l) => `Día: ${l}`} />
+              <Bar dataKey="ganancia" fill="var(--accent)" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
 
