@@ -601,9 +601,12 @@ const ProductRow = React.memo(function ProductRow({ product, token, onDone, onMe
 
   const ganancia = product.precio - (product.costo ?? 0);
   const margen = product.precio > 0 ? (ganancia / product.precio * 100).toFixed(1) : 0;
+  const stock = Number(product.cantidad_stock) || 0;
+  const stockMin = Number(product.stock_minimo) || 0;
+  const stockState = stock <= 0 ? " row-out" : stockMin > 0 && stock <= stockMin ? " row-low" : "";
 
   return (
-    <div className="row product-row">
+    <div className={"row product-row" + stockState}>
       <div className="product-title">
         <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
       </div>
@@ -629,7 +632,7 @@ function SaleForm({ token, products, onDone }) {
   const total = selectedProduct && +cantidad > 0 ? selectedProduct.precio * +cantidad : 0;
 
   useEffect(() => {
-    const prod = products.find(p => p.id === productoId);
+    const prod = products.find(p => String(p.id) === String(productoId));
     setSelectedProduct(prod || null);
     setMessage("");
     setError("");
@@ -660,13 +663,14 @@ function SaleForm({ token, products, onDone }) {
       return;
     }
 
+    console.log("DEBUG sale productoId=", productoId, "type=", typeof productoId, "id=", selectedProduct?.id, "type=", typeof selectedProduct?.id);
     setBusy(true);
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId: Number(productoId), cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
+      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
       setCantidad("1");
-      setProductoId("");
+      setProductoId(0);
       onDone();
     } catch (err) {
       setError(err.message || "No se pudo completar la venta: hubo un problema de conexión, intenta nuevamente.");
@@ -720,7 +724,7 @@ function SaleForm({ token, products, onDone }) {
 function Report({ report }) {
   if (!report) return null;
   const [stockBusqueda, setStockBusqueda] = useState("");
-  const [stockVerTodos, setStockVerTodos] = useState(false);
+  const [stockModal, setStockModal] = useState(false);
   const STOCK_LIMIT = 10;
   const queryStock = (items = []) => {
     const q = stockBusqueda.trim().toLowerCase();
@@ -827,7 +831,7 @@ function Report({ report }) {
                   <span className={`stock-dot dot-out`} />Agotados
                   <span className="count">{queryStock(report.agotados).length}</span>
                 </h4>
-                {queryStock(report.agotados).slice(0, stockVerTodos ? undefined : STOCK_LIMIT).map(p => renderStockRow(p, false, "out"))}
+                {queryStock(report.agotados).slice(0, STOCK_LIMIT).map(p => renderStockRow(p, false, "out"))}
               </>
             )}
             {report.bajoStock?.length > 0 && (
@@ -836,19 +840,50 @@ function Report({ report }) {
                   <span className={`stock-dot dot-low`} />Stock bajo
                   <span className="count">{queryStock(report.bajoStock).length}</span>
                 </h4>
-                {queryStock(report.bajoStock).slice(0, stockVerTodos ? undefined : STOCK_LIMIT).map(p => renderStockRow(p, true, "low"))}
+                {queryStock(report.bajoStock).slice(0, STOCK_LIMIT).map(p => renderStockRow(p, true, "low"))}
               </>
             )}
             {stockBusqueda && queryStock([...(report.agotados||[]), ...(report.bajoStock||[])]).length === 0 && (
               <p className="muted">Sin resultados para "{stockBusqueda}"</p>
             )}
             {stockBusqueda === "" && ((report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)) > STOCK_LIMIT && (
-              <button className="button-text" onClick={() => setStockVerTodos(v => !v)}>
-                {stockVerTodos ? "Mostrar menos" : `Ver todos (${(report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)})`}
+              <button className="button-text" onClick={() => setStockModal(true)}>
+                Ver todos ({(report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)})
               </button>
             )}
           </div>
         </>
+      )}
+
+      {stockModal && (
+        <div className="modal-overlay" onClick={() => setStockModal(false)}>
+          <div className="modal stock-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Alertas de Stock</h3>
+            <div className="stock-modal-list">
+              {report.agotados?.length > 0 && (
+                <>
+                  <h4 className="stock-alert-group-title">
+                    <span className="stock-dot dot-out" />Agotados
+                    <span className="count">{report.agotados.length}</span>
+                  </h4>
+                  {report.agotados.map(p => renderStockRow(p, false))}
+                </>
+              )}
+              {report.bajoStock?.length > 0 && (
+                <>
+                  <h4 className="stock-alert-group-title">
+                    <span className="stock-dot dot-low" />Stock bajo
+                    <span className="count">{report.bajoStock.length}</span>
+                  </h4>
+                  {report.bajoStock.map(p => renderStockRow(p, true))}
+                </>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setStockModal(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
