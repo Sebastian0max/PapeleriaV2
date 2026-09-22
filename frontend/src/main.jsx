@@ -389,7 +389,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       {error && <p className="error">{error}</p>}
       {message && <p className="success" style={{ margin: "0 0 20px" }}>{message}</p>}
 
-      {view !== "config" && (
+      {view !== "config" && view !== "inventario" && (
         <section className="metrics">
           <Metric icon={<Boxes />} label="Productos" value={products.length} />
           <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
@@ -401,24 +401,19 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
       )}
 
       {view === "inventario" && (
-        <section className="workspace">
-          <div className="panel inventory-panel">
-            <div className="panel-head">
-              <h2>Productos</h2>
-              <div className="search"><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} />{isLoading && <span className="spinner" />}</div>
-            </div>
-            {canAdmin("productos:crear") && <ProductForm token={token} onDone={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }} />}
-            <div className="table">
-              {products.map((product) => (
-                <ProductRow key={product.id} product={product} token={token} onDone={load} onMessage={notify} can={canAdmin} onDeleteRequest={setProductToDelete} />
-              ))}
-            </div>
-          </div>
-          <div className="panel side-panel">
-            <h2>Stock</h2>
-            <Report report={report} />
-          </div>
-        </section>
+        <InventarioView
+          products={products}
+          search={search}
+          setSearch={setSearch}
+          isLoading={isLoading}
+          canAdmin={canAdmin}
+          token={token}
+          notify={notify}
+          onProductCreated={() => { setMessage("Producto creado con exito"); setTimeout(() => setMessage(""), 3000); load(); }}
+          onDone={load}
+          setProductToDelete={setProductToDelete}
+          profitToday={profitToday}
+        />
       )}
 
       {view === "ventas" && (
@@ -475,6 +470,121 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
 
 function Metric({ icon, label, value, className }) {
   return <div className={"metric" + (className ? " " + className : "")}>{icon}<div><span>{label}</span><strong>{value}</strong></div></div>;
+}
+
+function InventarioView({ products, search, setSearch, isLoading, canAdmin, token, notify, onProductCreated, onDone, setProductToDelete, profitToday }) {
+  const [filter, setFilter] = useState('todos');
+  const [detail, setDetail] = useState(null);
+
+  const disponibles = products.filter(p => (Number(p.cantidad_stock) || 0) > 0 && (Number(p.cantidad_stock) || 0) > (p.stock_minimo ?? 0)).length;
+  const agotadosCount = products.filter(p => (Number(p.cantidad_stock) || 0) <= 0).length;
+  const stockBajoCount = products.filter(p => {
+    const s = Number(p.cantidad_stock) || 0; const m = p.stock_minimo ?? 0;
+    return s > 0 && s <= m;
+  }).length;
+
+  const filtered = products.filter(p => {
+    const s = Number(p.cantidad_stock) || 0; const m = p.stock_minimo ?? 0;
+    const term = search.trim().toLowerCase();
+    const matchTerm = !term || p.nombre?.toLowerCase().includes(term) || (p.categoria || '').toLowerCase().includes(term) || (p.codigo_barras || '').toLowerCase().includes(term) || String(p.id).includes(term);
+    if (!matchTerm) return false;
+    if (filter === 'disponibles') return s > 0 && s > m;
+    if (filter === 'agotados') return s <= 0;
+    if (filter === 'stock-bajo') return s > 0 && s <= m;
+    return true;
+  });
+
+  function stockState(p) {
+    const s = Number(p.cantidad_stock) || 0; const m = p.stock_minimo ?? 0;
+    if (s <= 0) return { tag: 'agotado', dot: 'dot-out', cls: 'tag-out' };
+    if (s <= m) return { tag: 'stock bajo', dot: 'dot-low', cls: 'tag-low' };
+    return { tag: 'disponible', dot: 'dot-ok', cls: 'tag-ok' };
+  }
+
+  return (
+    <section className="workspace">
+      <div className="layout-side" style={{ width: '100%' }}>
+        <div className="layout-table">
+          <div className="summary-line">
+            <span><span className="summary-strong">{products.length}</span> productos</span>
+            <span className="summary-sep">·</span>
+            <span><span className="summary-ok">{disponibles}</span> disponible{disponibles !== 1 ? 's' : ''}</span>
+            <span className="summary-sep">·</span>
+            <span><span className="summary-danger">{agotadosCount}</span> agotado{agotadosCount !== 1 ? 's' : ''}</span>
+            <span className="summary-sep">·</span>
+            <span><span className="summary-warn">{stockBajoCount}</span> stock bajo</span>
+            <span className="summary-sep">·</span>
+            <span>${(profitToday?.totalGanancia ?? 0).toLocaleString()} hoy</span>
+          </div>
+          <div className="toolbar">
+            <div className="filter-pills">
+              <button className={`pill ${filter==='todos'?'active':''}`} onClick={() => setFilter('todos')}>Todos</button>
+              <button className={`pill ${filter==='disponibles'?'active':''}`} onClick={() => setFilter('disponibles')}>Disponibles</button>
+              <button className={`pill ${filter==='agotados'?'active':''}`} onClick={() => setFilter('agotados')}>Agotados</button>
+              <button className={`pill ${filter==='stock-bajo'?'active':''}`} onClick={() => setFilter('stock-bajo')}>Stock bajo</button>
+            </div>
+            <div className="search" style={{ marginLeft: 'auto' }}><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} />{isLoading && <span className="spinner" />}</div>
+          </div>
+          {canAdmin("productos:crear") && <ProductForm token={token} onDone={onProductCreated} />}
+          <div className="table-card">
+            <div className="table-scroll">
+              <table className="inventory-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Stock</th>
+                    <th>Precio venta</th>
+                    <th>⋮</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((p) => {
+                    const st = stockState(p);
+                    const isActive = (detail && String(detail.id) === String(p.id));
+                    return (
+                      <tr key={p.id} className={isActive ? 'active' : ''} onClick={(e) => { if (e.target.closest('.row-menu')) return; setDetail(p); }}>
+                        <td>
+                          <div className="cell-product">
+                            <span className="name">{p.nombre}</span>
+                            {(p.categoria || p.sku || p.codigo_barras) && <span className="cat">{p.categoria || ''}{(p.categoria && p.sku) ? ' • ' : ''}{p.sku || ''}{p.codigo_barras ? ' • ' + p.codigo_barras : ''}</span>}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="stock-cell">
+                            <span className={`dot ${st.dot}`}></span>
+                            <span className="stock-num">{Number(p.cantidad_stock) || 0}</span>
+                            <span className={`stock-tag ${st.cls}`}>{st.tag}</span>
+                          </div>
+                        </td>
+                        <td><span className="price">${Number(p.precio).toLocaleString()}</span></td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button className="row-menu" onClick={(e) => { e.stopPropagation(); setDetail(p); }} title="Opciones">⋮</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>Sin productos que coincidan con el filtro/búsqueda</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {detail && (
+          <aside className="detail-panel">
+            <div className="detail-head">
+              <h3>{detail.nombre}</h3>
+              <div className="spacer"></div>
+              <button className="detail-close" onClick={() => setDetail(null)}>✕</button>
+            </div>
+            <div className="detail-sub">{detail.categoria || 'Sin categoría'}</div>
+            <DetailPanel product={detail} token={token} onDone={() => { setDetail(null); onDone(); }} onMessage={notify} can={canAdmin} onDeleteRequest={setProductToDelete} />
+          </aside>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function ProductForm({ token, onDone }) {
@@ -601,12 +711,9 @@ const ProductRow = React.memo(function ProductRow({ product, token, onDone, onMe
 
   const ganancia = product.precio - (product.costo ?? 0);
   const margen = product.precio > 0 ? (ganancia / product.precio * 100).toFixed(1) : 0;
-  const stock = Number(product.cantidad_stock) || 0;
-  const stockMin = Number(product.stock_minimo) || 0;
-  const stockState = stock <= 0 ? " row-out" : stockMin > 0 && stock <= stockMin ? " row-low" : "";
 
   return (
-    <div className={"row product-row" + stockState}>
+    <div className="row product-row">
       <div className="product-title">
         <div><strong>{product.nombre}</strong><span>${product.precio}</span></div>
       </div>
@@ -620,6 +727,70 @@ const ProductRow = React.memo(function ProductRow({ product, token, onDone, onMe
     </div>
   );
 });
+
+function DetailPanel({ product, token, onDone, onMessage, can, onDeleteRequest }) {
+  const [stock, setStock] = useState(Number(product.cantidad_stock) || 0);
+  const [costo, setCosto] = useState(product.costo ?? "");
+  const [precio, setPrecio] = useState(product.precio ?? "");
+  const [busy, setBusy] = useState(false);
+
+  const costoN = Number(costo) || 0;
+  const precioN = Number(precio) || 0;
+  const ganancia = precioN - costoN;
+  const margenPct = precioN > 0 ? (ganancia / precioN) * 100 : 0;
+
+  async function guardar() {
+    setBusy(true);
+    try {
+      const payload = {
+        nombre: product.nombre,
+        precio: Number(precio) || 0,
+        costo: Number(costo) || 0,
+        cantidad_stock: Number(stock) || 0
+      };
+      await api(token, `/productos/${product.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      onMessage(`Producto "${product.nombre}" actualizado.`);
+      onDone();
+    } catch (err) {
+      alert("Error al guardar: " + err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="detail-field">
+        <label>Stock actual</label>
+        <div className="stepper">
+          <button type="button" onClick={() => setStock(Math.max(0, stock - 1))} disabled={busy}>−</button>
+          <span className="val">{stock}</span>
+          <button type="button" onClick={() => setStock(stock + 1)} disabled={busy}>+</button>
+          <span className="badge">uds</span>
+        </div>
+      </div>
+      <div className="field-price">
+        <div className="detail-field">
+          <label>Precio costo</label>
+          <input className="price-input" type="number" min="0" value={costo} onChange={(e) => setCosto(e.target.value)} disabled={busy} />
+        </div>
+        <div className="detail-field">
+          <label>Precio venta</label>
+          <input className="price-input" type="number" min="0" value={precio} onChange={(e) => setPrecio(e.target.value)} disabled={busy} />
+        </div>
+      </div>
+      <div className={`margin-box ${margenPct < 0 ? 'neg' : ''}`}>
+        <span className="m-label">Margen</span>
+        <span className="m-value">{margenPct.toFixed(1)}%</span>
+      </div>
+      {margenPct >= 0 && margenPct < 10 && <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--stock-low-text)', marginTop: 'var(--space-2)' }}>Margen bajo: considerá un precio de venta mayor.</p>}
+      <div className="detail-actions">
+        <button className="btn-primary" onClick={guardar} disabled={busy}>{busy ? <Loader2 size={16} className="spin" /> : 'Guardar'}</button>
+        {can("productos:eliminar") && <button className="btn-secondary" onClick={() => onDeleteRequest(product)} disabled={busy}>Eliminar</button>}
+      </div>
+    </div>
+  );
+}
 
 function SaleForm({ token, products, onDone }) {
   const [productoId, setProductoId] = useState(0);
@@ -663,14 +834,13 @@ function SaleForm({ token, products, onDone }) {
       return;
     }
 
-    console.log("DEBUG sale productoId=", productoId, "type=", typeof productoId, "id=", selectedProduct?.id, "type=", typeof selectedProduct?.id);
     setBusy(true);
     try {
       await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
       setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
       setError("");
       setCantidad("1");
-      setProductoId(0);
+      setProductoId("");
       onDone();
     } catch (err) {
       setError(err.message || "No se pudo completar la venta: hubo un problema de conexión, intenta nuevamente.");
@@ -723,14 +893,6 @@ function SaleForm({ token, products, onDone }) {
 
 function Report({ report }) {
   if (!report) return null;
-  const [stockBusqueda, setStockBusqueda] = useState("");
-  const [stockModal, setStockModal] = useState(false);
-  const STOCK_LIMIT = 10;
-  const queryStock = (items = []) => {
-    const q = stockBusqueda.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((p) => (p.nombre || "").toLowerCase().includes(q));
-  };
   const RankBadge = ({ i }) => {
     const cls = i === 0 ? "rank-1" : i === 1 ? "rank-2" : i === 2 ? "rank-3" : "rank-n";
     return <span className={`rank ${cls}`}>{i + 1}</span>;
@@ -821,69 +983,10 @@ function Report({ report }) {
         <>
           <h3 style={{ margin: "var(--space-md) 0 var(--space-sm)", fontSize: "var(--fs-sm)", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-secondary)" }}>Alertas de Stock</h3>
           <div className="report-section">
-            <div className="stock-alert-search">
-              <Search size={14} />
-              <input type="search" placeholder="Buscar producto..." value={stockBusqueda} onChange={(e) => setStockBusqueda(e.target.value)} />
-            </div>
-            {report.agotados?.length > 0 && (
-              <>
-                <h4 className="stock-alert-group-title">
-                  <span className={`stock-dot dot-out`} />Agotados
-                  <span className="count">{queryStock(report.agotados).length}</span>
-                </h4>
-                {queryStock(report.agotados).slice(0, STOCK_LIMIT).map(p => renderStockRow(p, false, "out"))}
-              </>
-            )}
-            {report.bajoStock?.length > 0 && (
-              <>
-                <h4 className="stock-alert-group-title">
-                  <span className={`stock-dot dot-low`} />Stock bajo
-                  <span className="count">{queryStock(report.bajoStock).length}</span>
-                </h4>
-                {queryStock(report.bajoStock).slice(0, STOCK_LIMIT).map(p => renderStockRow(p, true, "low"))}
-              </>
-            )}
-            {stockBusqueda && queryStock([...(report.agotados||[]), ...(report.bajoStock||[])]).length === 0 && (
-              <p className="muted">Sin resultados para "{stockBusqueda}"</p>
-            )}
-            {stockBusqueda === "" && ((report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)) > STOCK_LIMIT && (
-              <button className="button-text" onClick={() => setStockModal(true)}>
-                Ver todos ({(report.agotados?.length ?? 0) + (report.bajoStock?.length ?? 0)})
-              </button>
-            )}
+            {report.agotados?.map(p => renderStockRow(p, false))}
+            {report.bajoStock?.map(p => renderStockRow(p, true))}
           </div>
         </>
-      )}
-
-      {stockModal && (
-        <div className="modal-overlay" onClick={() => setStockModal(false)}>
-          <div className="modal stock-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Alertas de Stock</h3>
-            <div className="stock-modal-list">
-              {report.agotados?.length > 0 && (
-                <>
-                  <h4 className="stock-alert-group-title">
-                    <span className="stock-dot dot-out" />Agotados
-                    <span className="count">{report.agotados.length}</span>
-                  </h4>
-                  {report.agotados.map(p => renderStockRow(p, false))}
-                </>
-              )}
-              {report.bajoStock?.length > 0 && (
-                <>
-                  <h4 className="stock-alert-group-title">
-                    <span className="stock-dot dot-low" />Stock bajo
-                    <span className="count">{report.bajoStock.length}</span>
-                  </h4>
-                  {report.bajoStock.map(p => renderStockRow(p, true))}
-                </>
-              )}
-            </div>
-            <div className="modal-actions">
-              <button onClick={() => setStockModal(false)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
