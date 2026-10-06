@@ -125,9 +125,19 @@ function Login({ onLogin }) {
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [slowServer, setSlowServer] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const lockRef = useRef(false);
+  const slowTimer = useRef(null);
+
+  // El backend gratuito (Render) se duerme tras ~15 min sin uso y tarda
+  // ~30s en despertar. Esta petición lo pre-calienta mientras el usuario
+  // escribe sus credenciales, sin costo y sin cambiar nada del servidor.
+  useEffect(() => {
+    fetch(`${API_URL.replace(/\/+$/, "")}/health`).catch(() => {});
+    return () => { if (slowTimer.current) clearTimeout(slowTimer.current); };
+  }, []);
 
   async function submit(event) {
     event.preventDefault();
@@ -135,6 +145,8 @@ function Login({ onLogin }) {
     lockRef.current = true;
     setError("");
     setLoading(true);
+    setSlowServer(false);
+    slowTimer.current = setTimeout(() => setSlowServer(true), 4000);
     try {
       const data = await api(null, "/auth/login", {
         method: "POST",
@@ -144,6 +156,8 @@ function Login({ onLogin }) {
     } catch (err) {
       setError(err.message);
     } finally {
+      if (slowTimer.current) clearTimeout(slowTimer.current);
+      setSlowServer(false);
       setLoading(false);
       lockRef.current = false;
     }
@@ -158,6 +172,7 @@ function Login({ onLogin }) {
         <label>Password<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <p className="error">{error}</p>}
         <button disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
+        {loading && slowServer && <p className="muted">Conectando con el servidor, puede tardar unos segundos la primera vez…</p>}
       </form>
     </main>
   );
