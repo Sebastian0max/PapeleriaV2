@@ -606,3 +606,166 @@ table.inventory-table tbody tr.active { background: rgba(20, 108, 99, 0.05); }
 .stock-label { color: var(--text); font-size: var(--fs-sm); }
 .stock-count { color: var(--text-secondary); font-size: var(--fs-sm); font-weight: 700; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .stock-alert-row { gap: var(--space-md); }
+
+/* ==== DISEÑO v2 (2da iteración): herramienta de trabajo, sin texto pegado ==== */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.btn-ghost {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); min-height: var(--btn-h); padding: var(--space-sm) var(--space-lg);
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;
+}
+.page-title { margin: 0; font-size: var(--fs-xl); letter-spacing: -0.01em; }
+.page-desc { margin: 4px 0 14px; color: var(--text-secondary); font-size: var(--fs-sm); }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-md); margin-bottom: var(--space-md); flex-wrap: wrap; }
+.sub-title { margin: 18px 0 8px; font-size: var(--fs-base); }
+
+/* Header v2: marca + iconos discretos con aire (fix TemaExportaAvisos pegado) */
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-weight: 800; font-size: 16px; flex-shrink: 0;
+}
+.topbar .brand h1 { margin: 0; font-size: var(--fs-lg); }
+.brand-user { color: var(--text-secondary); font-size: var(--fs-sm); }
+.header-actions { gap: 12px; }
+.header-actions .icon-button { position: relative; }
+.alerts-dropdown { position: relative; }
+.alert-badge {
+  position: absolute; top: -6px; right: -6px; background: var(--danger); color: #fff;
+  font-size: 10px; font-weight: 800; min-width: 18px; height: 18px; border-radius: 999px;
+  display: grid; place-items: center; padding: 0 4px;
+}
+.alerts-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); width: 280px; z-index: 200;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: var(--space-md); display: grid; gap: 4px;
+}
+.alerts-title { font-size: var(--fs-sm); margin-bottom: 4px; }
+.alert-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: var(--radius-sm); padding: 8px; cursor: pointer;
+  color: var(--text); font-size: var(--fs-sm); min-height: 0;
+}
+.alert-row:hover { background: var(--tab-bg); }
+.alert-row em { margin-left: auto; font-style: normal; color: var(--text-secondary); font-size: var(--fs-xs); flex-shrink: 0; }
+
+/* Tabs: una sola página activa, scroll horizontal en angosto */
+.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.tabs button { white-space: nowrap; flex-shrink: 0; }
+
+/* Inventario v2: tabla a todo el ancho + drawer contextual */
+.inv-page { display: grid; gap: 0; }
+.add-wrap { margin-bottom: var(--space-md); }
+.drawer-root { position: fixed; inset: 0; z-index: 300; pointer-events: none; }
+.drawer-backdrop { position: absolute; inset: 0; background: var(--modal-overlay); pointer-events: auto; }
+.detail-panel.drawer {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 100vw);
+  border-radius: 0; border: 0; border-left: 1px solid var(--border);
+  overflow-y: auto; pointer-events: auto; box-shadow: -8px 0 32px rgba(0,0,0,.15);
+}
+
+/* Vender v2: flujo carrito */
+.sell-page { display: grid; gap: 0; }
+.sell-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-lg); align-items: start; }
+.sell-search { margin-bottom: var(--space-md); }
+.sell-list { display: grid; gap: var(--space-sm); }
+.sell-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px var(--space-md);
+}
+.sell-item-info { display: grid; min-width: 0; }
+.cart {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--space-lg); display: grid; gap: var(--space-sm);
+  position: sticky; top: 12px;
+}
+.cart-line { display: flex; align-items: center; gap: var(--space-sm); padding: 8px 0; border-bottom: 1px solid var(--border); }
+.cart-name { flex: 1; min-width: 0; display: grid; }
+.cart-name small { color: var(--text-secondary); font-size: var(--fs-xs); }
+.qty { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.qty-btn { width: 44px; height: 44px; font-size: 20px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--input-bg); color: var(--text); cursor: pointer; line-height: 1; padding: 0; min-height: 44px; }
+.cart-total { display: flex; align-items: baseline; justify-content: space-between; font-size: var(--fs-lg); font-weight: 800; padding-top: var(--space-sm); font-variant-numeric: tabular-nums; }
+.confirm-btn { width: 100%; min-height: 52px; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.recent-list { display: grid; gap: var(--space-sm); }
+.recent-row {
+  display: flex; align-items: center; gap: var(--space-md); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px var(--space-md); font-size: var(--fs-sm);
+}
+.recent-row > :last-child { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* Transacciones v2: tabla plana */
+.tx-page { display: grid; gap: 0; }
+table.tx-table { width: 100%; border-collapse: collapse; }
+table.tx-table thead th {
+  text-align: left; font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border); background: var(--bg);
+}
+table.tx-table tbody td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.tx-table tbody tr:last-child td { border-bottom: none; }
+table.tx-table tbody tr.is-reverted { opacity: 0.65; }
+.tx-fecha { white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-sm); }
+.tx-meta { display: block; color: var(--text-muted); font-size: var(--fs-xs); }
+.tx-act { text-align: right; white-space: nowrap; }
+.empty-cell { text-align: center; padding: 2rem; color: var(--text-secondary); }
+.badge.cancelada { background: #f1f5f9; color: #64748b; text-decoration: line-through; }
+.tx-cards { display: none; }
+.tx-mcard {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px var(--space-md); display: grid; gap: 6px;
+}
+.tx-mcard.is-reverted { opacity: 0.65; }
+.tx-mtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Ganancias v2: número grande + gráfico protagonista */
+.gain-page { display: grid; gap: 0; }
+.gain-tools { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
+.gain-hero { margin: 4px 0 14px; display: grid; gap: 2px; }
+.gain-label { color: var(--text-secondary); font-size: var(--fs-sm); }
+.gain-big { font-size: 42px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.chart-hero { margin-bottom: var(--space-md); }
+.gain-sum { display: flex; gap: var(--space-lg); flex-wrap: wrap; color: var(--text-secondary); font-size: var(--fs-sm); margin: 0 0 var(--space-md); }
+.gain-sum strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* Config v2: una sola lista por secciones, filas con líneas */
+.cfg-page { display: grid; gap: 0; }
+.cfg-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 16px 12px; }
+.cfg-sec { font-size: var(--fs-xs); letter-spacing: 0.08em; color: var(--text-muted); margin: 16px 0 4px; text-transform: uppercase; }
+.cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.cfg-row small { color: var(--text-secondary); display: block; font-weight: 400; }
+.cfg-block { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.cfg-block .panel { background: none; border: 0; padding: 0; }
+.cfg-exports { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg { display: inline-flex; gap: 4px; background: var(--tab-bg); border-radius: 999px; padding: 4px; }
+.seg button { border: 0; background: transparent; border-radius: 999px; padding: 8px 14px; cursor: pointer; color: var(--tab-text); min-height: 0; font-size: var(--fs-sm); }
+.seg button.active { background: var(--accent); color: #fff; font-weight: 700; }
+
+/* ==== Móvil 375px: sin scroll de página, todo táctil ==== */
+@media (max-width: 600px) {
+  body { overflow-x: hidden; }
+  .brand-user { display: none; }
+  .tabs { margin: 0 -var(--space-sm); padding: 8px var(--space-sm); }
+  .page-title { font-size: 20px; }
+  .sell-grid { grid-template-columns: 1fr; }
+  .cart { position: static; }
+  .confirm-btn { position: sticky; bottom: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  table.tx-table { display: none; }
+  .tx-cards { display: grid; gap: 8px; padding: var(--space-md); }
+  .tx-mcard .revert-btn { width: 100%; min-height: 44px; }
+  .gain-big { font-size: 34px; }
+  .cfg-exports .btn-ghost { flex: 1; justify-content: center; }
+  .alerts-menu { width: min(300px, calc(100vw - 48px)); }
+}
+@media (max-width: 375px) {
+  .detail-panel.drawer {
+    top: auto; left: 0; right: 0; bottom: 0; width: 100%;
+    max-height: 88vh; border-left: 0; border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+  }
+  .qty-btn { width: 48px; height: 48px; }
+  .sell-item { padding: 12px; }
+  .sell-item .btn-ghost { min-height: 44px; }
+  .summary-line { white-space: normal; }
+  .filters, .transactions-filters { grid-template-columns: 1fr 1fr; }
+}

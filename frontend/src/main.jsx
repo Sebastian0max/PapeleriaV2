@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import {
   Boxes,
+  Bell,
   Download,
   FileText,
   Loader2,
@@ -237,9 +238,11 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
 
 const VIEW_TITLES = {
   inventario: "Inventario",
+  vender: "Vender",
+  transacciones: "Transacciones",
   ventas: "Transacciones",
   ganancias: "Ganancias",
-  config: "Configuracion"
+  config: "Configuración"
 };
 
 function Dashboard({ session, onLogout, theme, toggleTheme }) {
@@ -248,6 +251,8 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const can = useCallback((key) => session.user.rol === "admin" || permissions.includes(key), [permissions, session]);
   const canAdmin = useCallback((key) => session.user.rol === "admin" && can(key), [can, session]);
   const [view, setView] = useState("inventario");
+  // Migración v2: la vista legacy "ventas" ahora es "transacciones"
+  useEffect(() => { if (view === "ventas") setView("transacciones"); }, [view]);
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
   const [report, setReport] = useState(null);
@@ -259,10 +264,11 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const [productToDelete, setProductToDelete] = useState(null);
   const [revertTarget, setRevertTarget] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  function toggleExportMenu() { setShowExportMenu(s => !s); }
+  const [showAlerts, setShowAlerts] = useState(false);
+  const [alertsEnabled, setAlertsEnabled] = useState(() => localStorage.getItem("alertsEnabled") !== "0");
+  useEffect(() => { localStorage.setItem("alertsEnabled", alertsEnabled ? "1" : "0"); }, [alertsEnabled]);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -272,11 +278,11 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const notify = useCallback((m) => { setMessage(m); setTimeout(() => setMessage(""), 5000); }, []);
 
   useEffect(() => {
-    if (!showExportMenu) return;
-    function close(e) { if (!e.target.closest('.export-dropdown')) setShowExportMenu(false); }
+    if (!showAlerts) return;
+    function close(e) { if (!e.target.closest('.alerts-dropdown')) setShowAlerts(false); }
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
-  }, [showExportMenu]);
+  }, [showAlerts]);
 
   async function confirmDeleteSale() {
     if (!saleToDelete) return;
@@ -361,51 +367,53 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const totalStock = useMemo(() => products.reduce((sum, item) => sum + item.cantidad_stock, 0), [products]);
   const showConfig = session.user.rol === "admin" && can("configuracion:ver");
 
+  const alertCount = alertsEnabled ? ((report?.agotados?.length || 0) + (report?.bajoStock?.length || 0)) : 0;
+
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <h1>{VIEW_TITLES[view] || "Inventario"}</h1>
-          <span>{session.user.usuario} - {session.user.rol}</span>
+        <div className="brand">
+          <span className="brand-mark">P</span>
+          <h1>Papelería</h1>
+          <span className="brand-user">{session.user.usuario} · {session.user.rol}</span>
         </div>
-        <nav className="tabs">
-          <button className={view === "inventario" ? "active" : ""} onClick={() => setView("inventario")}><Boxes size={17} />Inventario</button>
-          <button className={view === "ventas" ? "active" : ""} onClick={() => setView("ventas")}><ShoppingCart size={17} />Transacciones</button>
-          {can("reportes:ver") && <button className={view === "ganancias" ? "active" : ""} onClick={() => setView("ganancias")}><TrendingUp size={17} />Ganancias</button>}
-          {showConfig && <button className={view === "config" ? "active" : ""} onClick={() => setView("config")}><Settings size={17} />Config</button>}
-        </nav>
         <div className="header-actions">
-          <div className="export-dropdown">
-            <button className="icon-button" onClick={toggleExportMenu} title="Exportar datos"><Download size={18} /></button>
-            {showExportMenu && (
-              <div className="export-menu">
-                <button onClick={() => { downloadExcel(token, "/exportar/productos", "productos.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Productos (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/productos/pdf", "productos.pdf", setError); setShowExportMenu(false); }}><FileText size={14} /> Productos (PDF)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/ventas", "ventas.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Ventas (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/ventas/pdf", "ventas.pdf", setError); setShowExportMenu(false); }}><FileText size={14} /> Ventas (PDF)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/ganancias", "ganancias.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Ganancias (Excel)</button>
-                <button onClick={() => { downloadExcel(token, "/exportar/reportes", "reportes.xlsx", setError); setShowExportMenu(false); }}><FileText size={14} /> Reportes (Excel)</button>
+          <div className="alerts-dropdown">
+            <button className="icon-button alerts-btn" onClick={() => setShowAlerts(s => !s)} title="Avisos de stock" aria-label="Avisos">
+              <Bell size={18} />
+              {alertCount > 0 && <span className="alert-badge">{alertCount > 99 ? "99+" : alertCount}</span>}
+            </button>
+            {showAlerts && (
+              <div className="alerts-menu" role="dialog" aria-label="Avisos de stock">
+                <strong className="alerts-title">Avisos de stock</strong>
+                {!alertsEnabled && <p className="muted">Avisos silenciados (actívalos en Configuración → Preferencias).</p>}
+                {alertsEnabled && alertCount === 0 && <p className="muted">Sin alertas. Todo el stock está bien.</p>}
+                {alertsEnabled && (report?.agotados || []).slice(0, 4).map(p => (
+                  <button key={"a" + p.id} className="alert-row" onClick={() => { setSearch(p.nombre); setView("inventario"); setShowAlerts(false); }}>
+                    <span className="dot dot-out" />{p.nombre}<em>agotado</em>
+                  </button>
+                ))}
+                {alertsEnabled && (report?.bajoStock || []).slice(0, 4).map(p => (
+                  <button key={"b" + p.id} className="alert-row" onClick={() => { setSearch(p.nombre); setView("inventario"); setShowAlerts(false); }}>
+                    <span className="dot dot-low" />{p.nombre}<em>{p.cantidad_stock} uds</em>
+                  </button>
+                ))}
               </div>
             )}
           </div>
-          <button className="theme-toggle" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo oscuro"}>{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button>
-          <button className="icon-button" onClick={onLogout} title="Salir"><LogOut /></button>
+          {showConfig && <button className="icon-button" onClick={() => setView("config")} title="Configuración" aria-label="Configuración"><Settings size={18} /></button>}
+          <button className="icon-button" onClick={onLogout} title="Salir" aria-label="Salir"><LogOut size={18} /></button>
         </div>
       </header>
+      <nav className="tabs" aria-label="Navegación principal">
+        <button className={view === "inventario" ? "active" : ""} onClick={() => setView("inventario")}><Boxes size={17} />Inventario</button>
+        <button className={view === "vender" ? "active" : ""} onClick={() => setView("vender")}><ShoppingCart size={17} />Vender</button>
+        <button className={(view === "transacciones" || view === "ventas") ? "active" : ""} onClick={() => setView("transacciones")}><Clock size={17} />Transacciones</button>
+        {can("reportes:ver") && <button className={view === "ganancias" ? "active" : ""} onClick={() => setView("ganancias")}><TrendingUp size={17} />Ganancias</button>}
+      </nav>
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success" style={{ margin: "0 0 20px" }}>{message}</p>}
-
-      {view !== "config" && view !== "inventario" && (
-        <section className="metrics">
-          <Metric icon={<Boxes />} label="Productos" value={products.length} />
-          <Metric icon={<PackagePlus />} label="Unidades en stock" value={totalStock} />
-          <Metric icon={<ShoppingCart />} label="Ventas recientes" value={sales.length} />
-          {profitToday && <Metric icon={<TrendingUp />} label="Ganancia hoy" value={`$${profitToday.totalGanancia.toLocaleString()}`} />}
-          {report?.agotados?.length > 0 && <Metric icon={<AlertTriangle />} label="Agotados" value={report.agotados.length} className="metric-warning" />}
-          {report?.bajoStock?.length > 0 && <Metric icon={<AlertTriangle />} label="Stock bajo" value={report.bajoStock.length} className="metric-warning" />}
-        </section>
-      )}
 
       {view === "inventario" && (
         <InventarioView
@@ -423,27 +431,17 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
         />
       )}
 
-      {view === "ventas" && (
-        <section className="workspace">
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Vender</h2>
-            </div>
-            {can("ventas:crear") && <SaleForm token={token} products={products} onDone={() => setReloadKey(k => k + 1)} />}
-            <TransactionsList token={token} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} />
-          </div>
-          <div className="panel side-panel">
-            <div className="panel-head">
-              <h2>Reportes</h2>
-            </div>
-            <Report report={report} />
-          </div>
-        </section>
+      {view === "vender" && (
+        <VenderView token={token} products={products} sales={sales} canCrear={can("ventas:crear")} onDone={() => setReloadKey(k => k + 1)} />
       )}
 
-      {view === "ganancias" && <Ganancias token={token} />}
+      {(view === "transacciones" || view === "ventas") && (
+        <TransaccionesView token={token} products={products} user={session.user} onRevert={setRevertTarget} canRevert={can("ventas:eliminar")} reloadKey={reloadKey} onExportError={setError} />
+      )}
 
-      {view === "config" && <Config token={token} can={can} onImported={(msg) => {
+      {view === "ganancias" && <Ganancias token={token} onExportError={setError} />}
+
+      {view === "config" && <Config token={token} can={can} user={session.user} theme={theme} toggleTheme={toggleTheme} alertsEnabled={alertsEnabled} setAlertsEnabled={setAlertsEnabled} onLogout={onLogout} onExportError={setError} onImported={(msg) => {
         if (msg) { setMessage(msg); setTimeout(() => setMessage(""), 6000); }
         setSearch("");
         setReloadKey(k => k + 1);
@@ -482,6 +480,7 @@ function Metric({ icon, label, value, className }) {
 function InventarioView({ products, search, setSearch, isLoading, canAdmin, token, notify, onProductCreated, onDone, setProductToDelete, profitToday }) {
   const [filter, setFilter] = useState('todos');
   const [detail, setDetail] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
 
   const disponibles = products.filter(p => (Number(p.cantidad_stock) || 0) > 0 && (Number(p.cantidad_stock) || 0) > (p.stock_minimo ?? 0)).length;
   const agotadosCount = products.filter(p => (Number(p.cantidad_stock) || 0) <= 0).length;
@@ -509,10 +508,22 @@ function InventarioView({ products, search, setSearch, isLoading, canAdmin, toke
   }
 
   return (
-    <section className="workspace">
-      <div className="layout-side" style={{ width: '100%' }}>
-        <div className="layout-table">
-          <div className="summary-line">
+    <section className="inv-page">
+      <div className="page-head">
+        <div>
+          <h2 className="page-title">Inventario</h2>
+          <p className="page-desc">Administra productos y stock. Selecciona un producto para ver su detalle.</p>
+        </div>
+        {canAdmin("productos:crear") && (
+          <button className="btn-primary" onClick={() => setShowAdd(s => !s)}>+ Agregar producto</button>
+        )}
+      </div>
+      {showAdd && canAdmin("productos:crear") && (
+        <div className="add-wrap">
+          <ProductForm token={token} onDone={() => { setShowAdd(false); onProductCreated(); }} />
+        </div>
+      )}
+      <div className="summary-line">
             <span><span className="summary-strong">{products.length}</span> productos</span>
             <span className="summary-sep">·</span>
             <span><span className="summary-ok">{disponibles}</span> disponible{disponibles !== 1 ? 's' : ''}</span>
@@ -532,7 +543,6 @@ function InventarioView({ products, search, setSearch, isLoading, canAdmin, toke
             </div>
             <div className="search" style={{ marginLeft: 'auto' }}><Search size={18} /><input name="search" placeholder="Buscar" value={search} onChange={(e) => setSearch(e.target.value)} />{isLoading && <span className="spinner" />}</div>
           </div>
-          {canAdmin("productos:crear") && <ProductForm token={token} onDone={onProductCreated} />}
           <div className="table-card">
             <div className="table-scroll">
               <table className="inventory-table">
@@ -577,9 +587,10 @@ function InventarioView({ products, search, setSearch, isLoading, canAdmin, toke
               </table>
             </div>
           </div>
-        </div>
-        {detail && (
-          <aside className="detail-panel">
+      {detail && (
+        <div className="drawer-root">
+          <div className="drawer-backdrop" onClick={() => setDetail(null)} />
+          <aside className="detail-panel drawer" role="dialog" aria-label="Detalle de producto">
             <div className="detail-head">
               <h3>{detail.nombre}</h3>
               <div className="spacer"></div>
@@ -588,8 +599,8 @@ function InventarioView({ products, search, setSearch, isLoading, canAdmin, toke
             <div className="detail-sub">{detail.categoria || 'Sin categoría'}</div>
             <DetailPanel product={detail} token={token} onDone={() => { setDetail(null); onDone(); }} onMessage={notify} can={canAdmin} onDeleteRequest={setProductToDelete} />
           </aside>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -799,55 +810,72 @@ function DetailPanel({ product, token, onDone, onMessage, can, onDeleteRequest }
   );
 }
 
-function SaleForm({ token, products, onDone }) {
-  const [productoId, setProductoId] = useState(0);
-  const [cantidad, setCantidad] = useState("1");
-  const [selectedProduct, setSelectedProduct] = useState(null);
+function VenderView({ token, products, sales, canCrear, onDone }) {
+  const [query, setQuery] = useState("");
+  const [cart, setCart] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = selectedProduct && +cantidad > 0 ? selectedProduct.precio * +cantidad : 0;
+  const byId = useMemo(() => { const m = {}; products.forEach(p => { m[String(p.id)] = p; }); return m; }, [products]);
+  const filtered = useMemo(() => {
+    const t = query.trim().toLowerCase();
+    const list = products.filter(p => !t
+      || p.nombre?.toLowerCase().includes(t)
+      || (p.sku || "").toLowerCase().includes(t)
+      || (p.codigo_barras || "").toLowerCase().includes(t)
+      || (p.categoria || "").toLowerCase().includes(t));
+    return list.slice(0, 40);
+  }, [products, query]);
 
-  useEffect(() => {
-    const prod = products.find(p => String(p.id) === String(productoId));
-    setSelectedProduct(prod || null);
-    setMessage("");
+  function stockOf(p) { return Number(p.cantidad_stock) || 0; }
+  function inCart(id) { const l = cart.find(x => String(x.id) === String(id)); return l ? l.cantidad : 0; }
+
+  function add(p) {
+    if (!canCrear || busy) return;
+    const s = stockOf(p);
+    if (s <= 0) { setError(`"${p.nombre}" está agotado.`); return; }
+    if (inCart(p.id) + 1 > s) { setError(`Solo hay ${s} uds de "${p.nombre}".`); return; }
     setError("");
-  }, [productoId, products]);
+    setCart(prev => {
+      const f = prev.find(x => String(x.id) === String(p.id));
+      if (f) return prev.map(x => String(x.id) === String(p.id) ? { ...x, cantidad: x.cantidad + 1 } : x);
+      return [...prev, { id: p.id, cantidad: 1 }];
+    });
+  }
 
-  async function submit(event) {
-    event.preventDefault();
-    if (!productoId) return;
-    if (!selectedProduct) return;
+  function setQty(id, qty) {
+    const p = byId[String(id)];
+    const s = p ? stockOf(p) : 99;
+    const q = Math.max(0, Math.min(Number(qty) || 0, s));
+    setCart(prev => q <= 0 ? prev.filter(x => String(x.id) !== String(id)) : prev.map(x => String(x.id) === String(id) ? { ...x, cantidad: q } : x));
+  }
 
-    if (!selectedProduct.activo) {
-      setError("No se pudo completar la venta: este producto ya no está disponible.");
-      return;
+  const total = cart.reduce((sum, l) => { const p = byId[String(l.id)]; return sum + (p ? Number(p.precio) * l.cantidad : 0); }, 0);
+  const uds = cart.reduce((sum, l) => sum + l.cantidad, 0);
+
+  async function confirmar() {
+    if (!canCrear || cart.length === 0 || busy) return;
+    for (const l of cart) {
+      const p = byId[String(l.id)];
+      if (!p) { setError("Un producto del carrito ya no existe."); return; }
+      if (p.activo === 0 || p.activo === false) { setError(`"${p.nombre}" ya no está disponible.`); return; }
+      if (!p.precio || Number(p.precio) <= 0) { setError(`"${p.nombre}" no tiene un precio válido configurado.`); return; }
+      if (l.cantidad > stockOf(p)) { setError(`Solo hay ${stockOf(p)} uds de "${p.nombre}".`); return; }
     }
-
-    if (!selectedProduct.precio || selectedProduct.precio <= 0) {
-      setError("No se pudo completar la venta: el producto no tiene un precio válido configurado.");
-      return;
-    }
-
-    if (!cantidad || !Number.isFinite(+cantidad) || +cantidad <= 0) {
-      setError("No se pudo completar la venta: la cantidad ingresada no es válida.");
-      return;
-    }
-
-    if (+cantidad > selectedProduct.cantidad_stock) {
-      setError(`No se pudo completar la venta: solo hay ${selectedProduct.cantidad_stock} unidades disponibles de este producto.`);
-      return;
-    }
-
     setBusy(true);
+    setError("");
     try {
-      await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId, cantidad: +cantidad, precio_unitario: selectedProduct.precio }) });
-      setMessage(`Venta exitosa: ${+cantidad} unidades de ${selectedProduct.nombre} por $${total.toLocaleString()}`);
-      setError("");
-      setCantidad("1");
-      setProductoId("");
+      let cobrado = 0, n = 0;
+      for (const l of cart) {
+        const p = byId[String(l.id)];
+        await api(token, "/ventas", { method: "POST", body: JSON.stringify({ productoId: String(p.id), cantidad: l.cantidad, precio_unitario: p.precio }) });
+        cobrado += Number(p.precio) * l.cantidad;
+        n += l.cantidad;
+      }
+      setMessage(`Venta exitosa: ${n} uds por $${cobrado.toLocaleString()}`);
+      setCart([]);
+      setQuery("");
       onDone();
     } catch (err) {
       setError(err.message || "No se pudo completar la venta: hubo un problema de conexión, intenta nuevamente.");
@@ -857,44 +885,71 @@ function SaleForm({ token, products, onDone }) {
     }
   }
 
+  const recent = (sales || []).slice(0, 5);
+
   return (
-    <form className="sale-form" onSubmit={submit}>
+    <section className="sell-page">
+      <h2 className="page-title">Vender</h2>
+      <p className="page-desc">Busca el producto, agrégalo al carrito, ajusta la cantidad y confirma.</p>
       {message && <div className="toast success">{message}</div>}
       {error && <div className="toast error">{error}</div>}
-      <select name="producto_id" value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-        <option value={0}>Producto</option>
-        {products.map((product) => (
-          <option key={product.id} value={product.id}>
-            {product.nombre}
-          </option>
-        ))}
-      </select>
-      {selectedProduct && (
-        <div className="stock-info">
-          <span><strong>Stock:</strong> {selectedProduct.cantidad_stock} uds</span>
-          <span><strong>Precio:</strong> ${selectedProduct.precio.toLocaleString()} c/u</span>
+      <div className="sell-grid">
+        <div className="sell-catalog">
+          <div className="search sell-search"><Search size={18} /><input name="vender-buscar" placeholder="Buscar producto para vender…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+          <div className="sell-list">
+            {filtered.map(p => {
+              const s = stockOf(p);
+              const agotado = s <= 0;
+              return (
+                <div className="sell-item" key={p.id}>
+                  <div className="sell-item-info">
+                    <strong>{p.nombre}</strong>
+                    <span className="muted">${Number(p.precio).toLocaleString()} · {agotado ? "agotado" : `${s} disp.`}</span>
+                  </div>
+                  <button className="btn-ghost" disabled={!canCrear || agotado || busy} onClick={() => add(p)} title={agotado ? "Sin stock" : "Agregar al carrito"}>Agregar</button>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && <p className="muted">Sin productos que coincidan con la búsqueda.</p>}
+          </div>
+        </div>
+        <aside className="cart" aria-label="Venta actual">
+          <strong>Venta actual</strong>
+          {cart.length === 0 && <p className="muted">El carrito está vacío. Agrega productos de la lista.</p>}
+          {cart.map(l => {
+            const p = byId[String(l.id)];
+            if (!p) return null;
+            return (
+              <div className="cart-line" key={l.id}>
+                <span className="cart-name"><strong>{p.nombre}</strong><small>${Number(p.precio).toLocaleString()} c/u · ${Number(p.precio * l.cantidad).toLocaleString()}</small></span>
+                <span className="qty">
+                  <button type="button" className="qty-btn" onClick={() => setQty(l.id, l.cantidad - 1)} disabled={busy} aria-label="Quitar uno">−</button>
+                  <b>{l.cantidad}</b>
+                  <button type="button" className="qty-btn" onClick={() => setQty(l.id, l.cantidad + 1)} disabled={busy} aria-label="Agregar uno">+</button>
+                </span>
+              </div>
+            );
+          })}
+          <div className="cart-total"><span>Total{uds > 0 ? ` (${uds} uds)` : ""}</span><strong>${total.toLocaleString()}</strong></div>
+          <button className="btn-primary confirm-btn" disabled={!canCrear || cart.length === 0 || busy} onClick={confirmar}>
+            {busy ? <Loader2 size={18} className="spin" /> : <ShoppingCart size={18} />} {busy ? "Vendiendo…" : "Confirmar venta"}
+          </button>
+          {!canCrear && <p className="muted">No tienes permiso para crear ventas.</p>}
+        </aside>
+      </div>
+      <h3 className="sub-title">Ventas recientes</h3>
+      {recent.length === 0 ? <p className="muted">Aún no hay ventas recientes.</p> : (
+        <div className="recent-list">
+          {recent.map(s => (
+            <div className="recent-row" key={s.id}>
+              <span><strong>{s.producto_nombre}</strong> × {s.cantidad}</span>
+              <span className="muted">{s.fecha}</span>
+              <strong>${Number(s.total).toLocaleString()}</strong>
+            </div>
+          ))}
         </div>
       )}
-      <input name="cantidad" type="number" min="1" placeholder="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-      <button title="Vender" type="submit" disabled={busy}>
-        {busy ? <Loader2 size={18} className="spin" /> : <ShoppingCart size={18} />}
-      </button>
-      {selectedProduct && +cantidad > 0 && (
-        <div className="stock-info total-display">
-          Total a cobrar: <span>${total.toLocaleString()}</span>
-        </div>
-      )}
-      {selectedProduct && (selectedProduct.costo ?? 0) > selectedProduct.precio && (
-        <div className="sale-alert">
-          ⚠️ Este producto se vende por debajo de su costo (${selectedProduct.costo.toLocaleString()})
-        </div>
-      )}
-      {selectedProduct && (selectedProduct.costo ?? 0) > 0 && selectedProduct.costo <= selectedProduct.precio && (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio < 0.1 && (
-        <div className="sale-alert">
-          ⚠️ Margen bajo: {(100 * (selectedProduct.precio - selectedProduct.costo) / selectedProduct.precio).toFixed(1)}% de ganancia
-        </div>
-      )}
-    </form>
+    </section>
   );
 }
 
@@ -1010,23 +1065,65 @@ function ReportList({ title, items }) {
   );
 }
 
-function Config({ token, can, onImported }) {
-  const [section, setSection] = useState("importacion");
+function Config({ token, can, user, theme, toggleTheme, alertsEnabled, setAlertsEnabled, onLogout, onExportError, onImported }) {
+  function dl(path, filename) { downloadExcel(token, path, filename, onExportError); }
   return (
-    <section className="config-grid">
-      <aside className="panel config-menu">
-        {can("importacion:ver") && <button className={section === "importacion" ? "active" : ""} onClick={() => setSection("importacion")}><Upload size={17} />Importacion</button>}
-        {can("usuarios:ver") && <button className={section === "usuarios" ? "active" : ""} onClick={() => setSection("usuarios")}><Users size={17} />Usuarios</button>}
-        {can("roles:ver") && <button className={section === "roles" ? "active" : ""} onClick={() => setSection("roles")}><Settings size={17} />Roles</button>}
-        {can("importacion:ver") && <button className={section === "bitacora" ? "active" : ""} onClick={() => setSection("bitacora")}><Boxes size={17} />Bitacora</button>}
-        {can("productos:eliminar") && <button className={section === "papelera" ? "active" : ""} onClick={() => setSection("papelera")}><Trash2 size={17} />Papelera</button>}
-        <button onClick={() => window.open("/manual.html", "_blank")}><FileText size={17} />Manual</button>
-      </aside>
-      {section === "importacion" && <ImportPanel token={token} onImported={onImported} />}
-      {section === "usuarios" && <UsersPanel token={token} />}
-      {section === "roles" && <RolesPanel token={token} />}
-      {section === "bitacora" && <ImportLogPanel token={token} />}
-      {section === "papelera" && <TrashPanel token={token} />}
+    <section className="cfg-page">
+      <h2 className="page-title">Configuración</h2>
+      <p className="page-desc">Cuenta, preferencias y sistema en una sola lista.</p>
+      <div className="cfg-list">
+        <h3 className="cfg-sec">Cuenta</h3>
+        <div className="cfg-row">
+          <span><strong>{user?.usuario}</strong><small>Rol: {user?.rol}</small></span>
+          <button className="btn-ghost" onClick={onLogout}>Cerrar sesión</button>
+        </div>
+        {can("usuarios:ver") && (
+          <div className="cfg-block"><UsersPanel token={token} /></div>
+        )}
+        {can("roles:ver") && (
+          <div className="cfg-block"><RolesPanel token={token} /></div>
+        )}
+
+        <h3 className="cfg-sec">Preferencias</h3>
+        <div className="cfg-row">
+          <span><strong>Tema</strong><small>Claro u oscuro</small></span>
+          <span className="seg">
+            <button className={theme !== "dark" ? "active" : ""} onClick={() => { if (theme === "dark") toggleTheme(); }}>Claro</button>
+            <button className={theme === "dark" ? "active" : ""} onClick={() => { if (theme !== "dark") toggleTheme(); }}>Oscuro</button>
+          </span>
+        </div>
+        <div className="cfg-row">
+          <span><strong>Avisos de stock bajo</strong><small>Campana 🔔 del encabezado</small></span>
+          <span className="seg">
+            <button className={alertsEnabled ? "active" : ""} onClick={() => setAlertsEnabled(true)}>Activados</button>
+            <button className={!alertsEnabled ? "active" : ""} onClick={() => setAlertsEnabled(false)}>Silenciados</button>
+          </span>
+        </div>
+
+        <h3 className="cfg-sec">Sistema</h3>
+        <div className="cfg-row">
+          <span><strong>Exportar datos</strong><small>Productos, ventas, ganancias y reportes</small></span>
+          <span className="cfg-exports">
+            <button className="btn-ghost" onClick={() => dl("/exportar/productos", "productos.xlsx")}>Productos</button>
+            <button className="btn-ghost" onClick={() => dl("/exportar/ventas", "ventas.xlsx")}>Ventas</button>
+            <button className="btn-ghost" onClick={() => dl("/exportar/ganancias", "ganancias.xlsx")}>Ganancias</button>
+            <button className="btn-ghost" onClick={() => dl("/exportar/reportes", "reportes.xlsx")}>Reportes</button>
+          </span>
+        </div>
+        {can("importacion:ver") && (
+          <div className="cfg-block"><ImportPanel token={token} onImported={onImported} /></div>
+        )}
+        {can("importacion:ver") && (
+          <div className="cfg-block"><ImportLogPanel token={token} /></div>
+        )}
+        {can("productos:eliminar") && (
+          <div className="cfg-block"><TrashPanel token={token} /></div>
+        )}
+        <div className="cfg-row">
+          <span><strong>Manual de uso</strong><small>Guía rápida de la aplicación</small></span>
+          <button className="btn-ghost" onClick={() => window.open("/manual.html", "_blank")}><FileText size={16} /> Abrir manual</button>
+        </div>
+      </div>
     </section>
   );
 }
@@ -1263,7 +1360,7 @@ function sortMonths(yearObj) {
   return keys;
 }
 
-function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
+function TransaccionesView({ token, products, user, onRevert, canRevert, reloadKey, onExportError }) {
   const [transactions, setTransactions] = useState([]);
   const [filters, setFilters] = useState({ fechaDesde: "", fechaHasta: "", producto: "" });
   const [tipoFilter, setTipoFilter] = useState("");
@@ -1304,36 +1401,23 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
     return () => clearTimeout(t);
   }, [tipoFilter, reloadKey]);
 
-  // Agrupacion Año -> Mes -> Día
-  const grouped = useMemo(() => {
-    const map = {};
-    for (const t of transactions) {
-      const d = new Date(t.fecha);
-      const year = d.getFullYear();
-      const month = d.toLocaleString('es-ES', { month: 'long' });
-      const day = d.getDate();
-      const dateKey = `${day} de ${month}`;
+  // Precio por producto para estimar el total de cada venta (los movimientos no guardan total)
+  const priceById = useMemo(() => {
+    const m = {};
+    (products || []).forEach(p => {
+      const key = String(p.id);
+      m[key] = Number(p.precio) || 0;
+      if (p.nombre) m["n:" + p.nombre.toLowerCase()] = Number(p.precio) || 0;
+    });
+    return m;
+  }, [products]);
 
-      if (!map[year]) map[year] = {};
-      if (!map[year][month]) map[year][month] = {};
-      if (!map[year][month][dateKey]) map[year][month][dateKey] = [];
-
-      map[year][month][dateKey].push(t);
-    }
-    // Sort: non-reverted first within each day group
-    for (const year of Object.keys(map)) {
-      for (const month of Object.keys(map[year])) {
-        for (const dateKey of Object.keys(map[year][month])) {
-          map[year][month][dateKey].sort((a, b) => {
-            if (a.revertida && !b.revertida) return 1;
-            if (!a.revertida && b.revertida) return -1;
-            return 0;
-          });
-        }
-      }
-    }
-    return map;
-  }, [transactions]);
+  function rowTotal(t) {
+    if (t.tipo !== "venta") return null;
+    const unit = priceById[String(t.producto_id)] ?? priceById["n:" + String(t.producto_nombre || "").toLowerCase()] ?? 0;
+    if (!unit) return null;
+    return Number(t.cantidad) * unit;
+  }
 
   const TIPOS = [
     { value: "", label: "Todas", color: "#64748b" },
@@ -1345,7 +1429,14 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
   ];
 
   return (
-    <div className="transactions-list">
+    <div className="transactions-list tx-page">
+      <div className="page-head">
+        <div>
+          <h2 className="page-title">Transacciones</h2>
+          <p className="page-desc">Historial de movimientos: ventas, entradas, salidas y cancelaciones.</p>
+        </div>
+        <button className="btn-ghost" onClick={() => downloadExcel(token, "/exportar/ventas", "ventas.xlsx", onExportError)} title="Exportar ventas a Excel"><Download size={16} /> Exportar</button>
+      </div>
       <div className="transactions-filters">
         <input name="tx-fecha_desde" type="date" value={filters.fechaDesde} onChange={(e) => setFilters({ ...filters, fechaDesde: e.target.value })} title="Fecha desde" />
         <input name="tx-fecha_hasta" type="date" value={filters.fechaHasta} onChange={(e) => setFilters({ ...filters, fechaHasta: e.target.value })} title="Fecha hasta" />
@@ -1363,42 +1454,61 @@ function TransactionsList({ token, user, onRevert, canRevert, reloadKey }) {
         ))}
       </div>
 
-      <div className="timeline">
-                  {Object.keys(grouped).sort((a, b) => b - a).map(year => (
-          <div key={year} className="tl-year">
-            <h3>{year}</h3>
-            {sortMonths(grouped[year]).map(month => (
-              <div key={month} className="tl-month">
-                <h4>{month}</h4>
-                {sortDays(grouped[year][month]).map(dateKey => (
-                  <div key={dateKey} className="tl-day">
-                    <strong>{dateKey}</strong>
-                    <div className="table">
-                      {grouped[year][month][dateKey].map(t => (
-                        <div className="row transaction-row-content" key={t.id} data-revertida={t.revertida}>
-                          <span className="muted">{t.fecha.split(" ")[1]}</span>
-                          <span className={`badge ${t.tipo}`}>{t.tipo}</span>
-                          <div>
-                            <strong>{t.producto_nombre}</strong>
-                            <span className="trash-meta">
-                              Por: {t.usuario_nombre} {t.nota ? `- ${t.nota}` : ""}
-                              {t.revertida && <span className="error"> (REVERTIDA{t.revertida_por_usuario ? ` por ${t.revertida_por_usuario}` : ""}{t.motivo_reversion ? `: ${t.motivo_reversion}` : ""})</span>}
-                            </span>
-                          </div>
-                          <span className="stock-col">{t.cantidad} uds</span>
-                          {canRevert && (
-                            <button className={"danger revert-btn" + (t.revertida ? " restore-btn" : "")} onClick={() => onRevert(t)} title={t.revertida ? "Restaurar transaccion" : "Revertir transaccion"}>{t.revertida ? "Restaurar" : "Revertir"}</button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+      <div className="table-card tx-card">
+        <div className="table-scroll">
+          <table className="tx-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Producto</th>
+                <th>Movimiento</th>
+                <th>Cantidad</th>
+                <th>Total</th>
+                {canRevert && <th><span className="sr-only">Acción</span></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map(t => {
+                const tot = rowTotal(t);
+                const tipoCls = t.revertida ? "cancelada" : (t.tipo || "");
+                return (
+                  <tr key={t.id} className={t.revertida ? "is-reverted" : ""}>
+                    <td className="tx-fecha">{t.fecha}</td>
+                    <td>
+                      <strong>{t.producto_nombre || "—"}</strong>
+                      {(t.nota || t.usuario_nombre) && <small className="tx-meta">{t.usuario_nombre || ""}{t.nota ? ` · ${t.nota}` : ""}{t.revertida ? ` · revertida${t.motivo_reversion ? ": " + t.motivo_reversion : ""}` : ""}</small>}
+                    </td>
+                    <td><span className={`badge ${tipoCls}`}>{t.revertida ? "cancelada" : t.tipo}</span></td>
+                    <td className="stock-col">{t.cantidad} uds</td>
+                    <td className="stock-col">{tot != null ? `$${tot.toLocaleString()}` : "—"}</td>
+                    {canRevert && (
+                      <td className="tx-act">
+                        <button className={"danger revert-btn" + (t.revertida ? " restore-btn" : "")} onClick={() => onRevert(t)} title={t.revertida ? "Restaurar transacción" : "Revertir transacción"}>{t.revertida ? "Restaurar" : "Revertir"}</button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+              {transactions.length === 0 && (
+                <tr><td colSpan={canRevert ? 6 : 5} className="empty-cell">No hay transacciones para mostrar.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="tx-cards">
+          {transactions.map(t => {
+            const tot = rowTotal(t);
+            const tipoCls = t.revertida ? "cancelada" : (t.tipo || "");
+            return (
+              <div className={"tx-mcard" + (t.revertida ? " is-reverted" : "")} key={t.id}>
+                <div className="tx-mtop"><strong>{t.producto_nombre || "—"}</strong><span className={`badge ${tipoCls}`}>{t.revertida ? "cancelada" : t.tipo}</span></div>
+                <small className="muted">{t.fecha} · {t.cantidad} uds{tot != null ? ` · $${tot.toLocaleString()}` : ""}</small>
+                {canRevert && <button className={"danger revert-btn" + (t.revertida ? " restore-btn" : "")} onClick={() => onRevert(t)}>{t.revertida ? "Restaurar" : "Revertir"}</button>}
               </div>
-            ))}
-          </div>
-        ))}
-        {transactions.length === 0 && <p className="muted">No hay transacciones para mostrar.</p>}
+            );
+          })}
+          {transactions.length === 0 && <p className="muted">No hay transacciones para mostrar.</p>}
+        </div>
         {hasMore && transactions.length > 0 && (
           <button className="load-more-btn" onClick={() => load(true)}>Cargar más transacciones</button>
         )}
@@ -1491,7 +1601,7 @@ function TrashPanel({ token }) {
   );
 }
 
-function Ganancias({ token }) {
+function Ganancias({ token, onExportError }) {
   const [data, setData] = useState({ products: [], totalGanancia: 0, totalIngresos: 0 });
   const [evolution, setEvolution] = useState([]);
   const [periodo, setPeriodo] = useState("mes");
@@ -1528,30 +1638,35 @@ function Ganancias({ token }) {
   const margenBajoCls = "col-margen-bajo";
 
   return (
-    <section className="panel ganancias-section">
-      <div className="panel-head">
-        <h2>Ganancias por producto</h2>
-        <div className="period-filters">
-          {periodos.map(p => (
-            <button key={p.value} className={`period-btn${periodo === p.value ? " active" : ""}`}
-              onClick={() => setPeriodo(p.value)}
-            >{p.label}</button>
-          ))}
+    <section className="gain-page">
+      <div className="page-head">
+        <div>
+          <h2 className="page-title">Ganancias</h2>
+          <p className="page-desc">Rentabilidad del negocio por período.</p>
+        </div>
+        <div className="gain-tools">
+          <div className="period-filters" role="tablist" aria-label="Período">
+            {periodos.map(p => (
+              <button key={p.value} className={`period-btn${periodo === p.value ? " active" : ""}`}
+                onClick={() => setPeriodo(p.value)}
+              >{p.label}</button>
+            ))}
+          </div>
+          <button className="btn-ghost" onClick={() => downloadExcel(token, "/exportar/ganancias", "ganancias.xlsx", onExportError)} title="Exportar ganancias a Excel"><Download size={16} /> Exportar</button>
         </div>
       </div>
 
       {!loading && (
-        <div className="metrics ganancias-metrics">
-          <Metric icon={<TrendingUp />} label="Ganancia total" value={`$${data.totalGanancia.toLocaleString()}`} />
-          <Metric icon={<ShoppingCart />} label="Ingresos totales" value={`$${data.totalIngresos.toLocaleString()}`} />
-          <Metric icon={<Boxes />} label="Productos" value={data.products.length} />
-        </div>
+        <p className="gain-hero">
+          <span className="gain-label">Ganancia {periodo === "dia" ? "de hoy" : periodo === "semana" ? "de la semana" : "del mes"}</span>
+          <strong className="gain-big">${data.totalGanancia.toLocaleString()}</strong>
+        </p>
       )}
 
       {!loading && evolution.length > 0 && (
-        <div className="chart-box">
+        <div className="chart-box chart-hero">
           <h3>Evolución últimos 30 días</h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={300}>
             <BarChart data={evolution} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
@@ -1561,6 +1676,14 @@ function Ganancias({ token }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      )}
+
+      {!loading && (
+        <p className="gain-sum">
+          <span>Ventas <strong>${data.totalIngresos.toLocaleString()}</strong></span>
+          <span>Costos <strong>${(data.totalIngresos - data.totalGanancia).toLocaleString()}</strong></span>
+          <span>Ganancia <strong>${data.totalGanancia.toLocaleString()}</strong></span>
+        </p>
       )}
 
       {loading ? <p className="muted">Cargando...</p> : data.products.length === 0 ? <p className="muted">Sin datos en este periodo.</p> : (
