@@ -22,6 +22,11 @@ async function listTransactionsPostgres(client, tenantId, query = {}) {
     sql += ` AND t.created_at <= $${idx++}`;
     params.push(query.fechaHasta);
   }
+  if (query.producto) {
+    sql += ` AND (p.nombre ILIKE $${idx} OR p.codigo ILIKE $${idx})`;
+    idx += 1;
+    params.push(`%${query.producto}%`);
+  }
   if (query.tipo) {
     sql += ` AND t.tipo = $${idx++}`;
     params.push(query.tipo);
@@ -107,7 +112,7 @@ async function revertTransactionPostgres(client, tenantId, { movimientoId, usuar
 
 export function listTransactions(query = {}, { client, tenantId } = {}) {
   if (client) return listTransactionsPostgres(client, tenantId, query);
-  const { limit = 50, offset = 0, fechaDesde, fechaHasta, tipo } = query;
+  const { limit = 50, offset = 0, fechaDesde, fechaHasta, tipo, producto } = query;
   let sql = `
     SELECT m.*, p.nombre AS producto_nombre
     FROM movimientos m
@@ -117,6 +122,7 @@ export function listTransactions(query = {}, { client, tenantId } = {}) {
   const params = [];
   if (fechaDesde) { sql += " AND m.fecha >= ?"; params.push(fechaDesde); }
   if (fechaHasta) { sql += " AND m.fecha <= ?"; params.push(fechaHasta); }
+  if (producto) { sql += " AND (p.nombre LIKE ? OR p.sku LIKE ? OR p.codigo_barras LIKE ?)"; params.push(`%${producto}%`, `%${producto}%`, `%${producto}%`); }
   if (tipo) { sql += " AND m.tipo = ?"; params.push(tipo); }
   sql += " ORDER BY m.fecha DESC LIMIT ? OFFSET ?";
   params.push(Number(limit), Number(offset));

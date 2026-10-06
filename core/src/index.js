@@ -53,11 +53,3 @@ if (isPostgres) {
 const app = buildApp();
 await app.listen({ host: config.host, port: config.port });
 console.log(`[server] Listening on ${config.host}:${config.port}`);
-
-// Descargar DB de Supabase en segundo plano (no bloquea el arranque)
-if (!isPostgres) {
-  const { downloadDb, startPeriodicBackup } = await import("./services/cloud-backup.js");
-  downloadDb()
-    .catch((err) => console.error("[startup] DB download error:", err.message))
-    .finally(() => startPeriodicBackup());
-}

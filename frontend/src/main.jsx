@@ -235,6 +235,13 @@ function RevertModal({ isOpen, transaccion, onConfirm, onCancel }) {
   );
 }
 
+const VIEW_TITLES = {
+  inventario: "Inventario",
+  ventas: "Transacciones",
+  ganancias: "Ganancias",
+  config: "Configuracion"
+};
+
 function Dashboard({ session, onLogout, theme, toggleTheme }) {
   const token = session.token;
   const permissions = session.user.permisos || [];
@@ -358,7 +365,7 @@ function Dashboard({ session, onLogout, theme, toggleTheme }) {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <h1>{view === "config" ? "Configuracion" : "Inventario"}</h1>
+          <h1>{VIEW_TITLES[view] || "Inventario"}</h1>
           <span>{session.user.usuario} - {session.user.rol}</span>
         </div>
         <nav className="tabs">
